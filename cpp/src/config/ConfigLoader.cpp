@@ -23,6 +23,10 @@ Config ConfigLoader::load(
     cfg.sim.dt = root["sim"]["dt"].as<double>();
     cfg.sim.T  = root["sim"]["T"].as<double>();
 
+    cfg.controller.kp = root["controller"]["kp"].as<double>();
+    cfg.controller.ki = root["controller"]["ki"].as<double>();
+    cfg.controller.kd = root["controller"]["kd"].as<double>();
+
     for (auto o : root["world"]["obstacles"])
     {
         cfg.world.obstacles.push_back({

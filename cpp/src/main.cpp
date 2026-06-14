@@ -18,7 +18,9 @@ int main()
     TargetState target = cfg.target_init;
 
     KinematicSim    sim(drone, target, cfg.world);
-    PIDController   controller;
+    PIDController   controller(cfg.controller.kp,
+                               cfg.controller.ki,
+                               cfg.controller.kd);
     TrajectoryPlanner planner;
 
     std::ofstream file("../../data/trajectory.csv");
