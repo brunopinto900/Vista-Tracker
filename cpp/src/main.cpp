@@ -1,73 +1,54 @@
 #include <fstream>
 
 #include "config/ConfigLoader.hpp"
-
-#include "controllers/PIDController.hpp"
-#include "simulation/Simulator.hpp"
+#include "sim_impl/KinematicSim.hpp"
+#include "control/PIDController.hpp"
+#include "planning/TrajectoryPlanner.hpp"
 
 int main()
 {
-    Config cfg =
-        ConfigLoader::load(
-            "../../config/config.yaml");
+    Config cfg = ConfigLoader::load(
+        "../../config/config.yaml");
 
-    double dt =
-        cfg.simulation.dt;
+    State drone{};
+    drone.x = cfg.drone_init.x;
+    drone.y = cfg.drone_init.y;
+    drone.z = cfg.drone_init.z;
 
-    double sim_time =
-        cfg.simulation.sim_time;
+    TargetState target = cfg.target_init;
 
-    State drone =
-        cfg.drone;
+    KinematicSim    sim(drone, target, cfg.world);
+    PIDController   controller;
+    TrajectoryPlanner planner;
 
-    TargetState target =
-        cfg.target;
-
-    PIDController controller(
-        cfg.controller.desired_distance,
-        cfg.controller.pid.kp,
-        cfg.controller.pid.ki,
-        cfg.controller.pid.kd);
-
-    Simulator simulator;
-
-    std::ofstream file(
-        "../../data/trajectory.csv");
+    std::ofstream file("../../data/trajectory.csv");
 
     file << "t,"
-     << "target_x,target_y,target_z,"
-     << "drone_x,drone_y,drone_z,"
-     << "drone_vx,drone_vy,drone_vz,"
-     << "target_vx,target_vy,target_vz,"
-     << "vx_cmd,vy_cmd,vz_cmd\n";
+         << "target_x,target_y,target_z,"
+         << "drone_x,drone_y,drone_z,"
+         << "drone_vx,drone_vy,drone_vz,"
+         << "target_vx,target_vy,target_vz,"
+         << "vx_cmd,vy_cmd,vz_cmd\n";
 
-
-    for(double t = 0.0;
-        t <= sim_time;
-        t += dt)
+    for (double t = 0.0; t < cfg.sim.T; t += cfg.sim.dt)
     {
-        target.x += target.vx * dt;
-        target.y += target.vy * dt;
-        target.z += target.vz * dt;
+        State       d  = sim.getDroneState();
+        TargetState tr = sim.getTargetState();
 
-        auto cmd =
-            controller.update(
-                drone,
-                target,
-                dt);
+        State ref = planner.computeDesired(d, tr);
 
-        simulator.step(
-            drone,
-            cmd,
-            dt);
+        ControlCommand cmd = controller.update(d, ref, cfg.sim.dt);
 
-        file << t << ","
-     << target.x << "," << target.y << "," << target.z << ","
-     << drone.x << "," << drone.y << "," << drone.z << ","
-     << drone.x_dot << "," << drone.y_dot << "," << drone.z_dot << ","
-     << target.vx << "," << target.vy << "," << target.vz << ","
-     << cmd.vx_cmd << "," << cmd.vy_cmd << "," << cmd.vz_cmd
-     << "\n";
+        sim.applyControl(cmd, cfg.sim.dt);
+        sim.stepTarget(cfg.sim.dt);
+
+        file << t         << ","
+             << tr.x      << "," << tr.y  << "," << tr.z  << ","
+             << d.x       << "," << d.y   << "," << d.z   << ","
+             << d.vx      << "," << d.vy  << "," << d.vz  << ","
+             << tr.vx     << "," << tr.vy << "," << tr.vz << ","
+             << cmd.vx    << "," << cmd.vy << "," << cmd.vz
+             << "\n";
     }
 
     return 0;

@@ -1,34 +1,20 @@
 #pragma once
 
-#include "../models/State.hpp"
-#include "../models/TargetState.hpp"
-
-struct SimulationConfig
-{
-    double dt{};
-    double sim_time{};
-};
-
-struct PIDConfig
-{
-    double kp{};
-    double ki{};
-    double kd{};
-};
-
-struct ControllerConfig
-{
-    double desired_distance{};
-    PIDConfig pid;
-};
+#include "models/TargetState.hpp"
+#include "world/World.hpp"
 
 struct Config
 {
-    SimulationConfig simulation;
+    struct {
+        double x, y, z;
+    } drone_init;
 
-    State drone;
+    TargetState target_init;
 
-    TargetState target;
+    struct {
+        double dt;
+        double T;
+    } sim;
 
-    ControllerConfig controller;
+    World world;
 };

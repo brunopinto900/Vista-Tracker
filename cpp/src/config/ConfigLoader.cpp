@@ -3,61 +3,34 @@
 #include <yaml-cpp/yaml.h>
 
 Config ConfigLoader::load(
-    const std::string& filename)
+    const std::string& path)
 {
-    YAML::Node yaml =
-        YAML::LoadFile(filename);
+    YAML::Node root = YAML::LoadFile(path);
 
     Config cfg;
 
-    cfg.simulation.dt =
-        yaml["simulation"]["dt"].as<double>();
+    cfg.drone_init.x = root["drone_init"]["x"].as<double>();
+    cfg.drone_init.y = root["drone_init"]["y"].as<double>();
+    cfg.drone_init.z = root["drone_init"]["z"].as<double>();
 
-    cfg.simulation.sim_time =
-        yaml["simulation"]["sim_time"].as<double>();
+    cfg.target_init.x  = root["target_init"]["x"].as<double>();
+    cfg.target_init.y  = root["target_init"]["y"].as<double>();
+    cfg.target_init.z  = root["target_init"]["z"].as<double>();
+    cfg.target_init.vx = root["target_init"]["vx"].as<double>();
+    cfg.target_init.vy = root["target_init"]["vy"].as<double>();
+    cfg.target_init.vz = root["target_init"]["vz"].as<double>();
 
-    cfg.drone.x =
-        yaml["drone"]["x"].as<double>();
+    cfg.sim.dt = root["sim"]["dt"].as<double>();
+    cfg.sim.T  = root["sim"]["T"].as<double>();
 
-    cfg.drone.y =
-        yaml["drone"]["y"].as<double>();
-
-    cfg.drone.z =
-        yaml["drone"]["z"].as<double>();
-
-    cfg.target.x =
-        yaml["target"]["x"].as<double>();
-
-    cfg.target.y =
-        yaml["target"]["y"].as<double>();
-
-    cfg.target.z =
-        yaml["target"]["z"].as<double>();
-
-    cfg.target.vx =
-        yaml["target"]["vx"].as<double>();
-
-    cfg.target.vy =
-        yaml["target"]["vy"].as<double>();
-
-    cfg.target.vz =
-        yaml["target"]["vz"].as<double>();
-
-    cfg.controller.desired_distance =
-        yaml["controller"]["desired_distance"]
-            .as<double>();
-
-    cfg.controller.pid.kp =
-        yaml["controller"]["pid"]["kp"]
-            .as<double>();
-
-    cfg.controller.pid.ki =
-        yaml["controller"]["pid"]["ki"]
-            .as<double>();
-
-    cfg.controller.pid.kd =
-        yaml["controller"]["pid"]["kd"]
-            .as<double>();
+    for (auto o : root["world"]["obstacles"])
+    {
+        cfg.world.obstacles.push_back({
+            o["x"].as<double>(),
+            o["y"].as<double>(),
+            o["size"].as<double>()
+        });
+    }
 
     return cfg;
 }

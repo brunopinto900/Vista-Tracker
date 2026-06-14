@@ -13,12 +13,12 @@ struct State
     double yaw{};
 
     // Linear velocity
-    double x_dot{};
-    double y_dot{};
-    double z_dot{};
+    double vx{};
+    double vy{};
+    double vz{};
 
     // Angular velocity
-    double roll_rate{};
-    double pitch_rate{};
-    double yaw_rate{};
+    double wx{};
+    double wy{};
+    double wz{};
 };

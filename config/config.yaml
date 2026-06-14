@@ -1,25 +1,25 @@
-simulation:
-  dt: 0.05
-  sim_time: 30.0
+drone_init:
+  x: -8
+  y: 0
+  z: 0
 
-target:
-  x: 0.0
-  y: 0.0
-  z: 0.0
+target_init:
+  x: 0
+  y: 0
+  z: 0
+  vx: 1
+  vy: 0
+  vz: 0
 
-  vx: 1.0
-  vy: 0.0
-  vz: 0.0
+sim:
+  dt: 0.01
+  T: 10.0
 
-drone:
-  x: -8.0
-  y: -2.0
-  z: 0.0
-
-controller:
-  desired_distance: 4.0
-
-  pid:
-    kp: 1.0
-    ki: 0.0
-    kd: 0.2
+world:
+  obstacles:
+    - x: -2
+      y: 0
+      size: 1
+    - x: 2
+      y: 1
+      size: 1

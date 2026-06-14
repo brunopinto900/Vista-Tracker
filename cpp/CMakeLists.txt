@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(target_tracking_pid)
+project(VistaTracker CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(yaml-cpp REQUIRED)
 
@@ -12,12 +13,6 @@ add_executable(
     tracker
 
     src/main.cpp
-
-    src/controllers/PID.cpp
-    src/controllers/PIDController.cpp
-
-    src/simulation/Simulator.cpp
-
     src/config/ConfigLoader.cpp
 )
 
