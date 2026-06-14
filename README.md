@@ -17,5 +17,5 @@ python3 visualizer.py
 
 OR
 
-cd folder_home
-bash run.sh
+cd scripts
+./run.sh
