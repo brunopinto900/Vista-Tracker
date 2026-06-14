@@ -34,10 +34,13 @@ int main()
     std::ofstream file(
         "../../data/trajectory.csv");
 
-    file
-        << "time,"
-        << "target_x,target_y,"
-        << "drone_x,drone_y\n";
+    file << "t,"
+     << "target_x,target_y,target_z,"
+     << "drone_x,drone_y,drone_z,"
+     << "drone_vx,drone_vy,drone_vz,"
+     << "target_vx,target_vy,target_vz,"
+     << "vx_cmd,vy_cmd,vz_cmd\n";
+
 
     for(double t = 0.0;
         t <= sim_time;
@@ -47,7 +50,7 @@ int main()
         target.y += target.vy * dt;
         target.z += target.vz * dt;
 
-        auto command =
+        auto cmd =
             controller.update(
                 drone,
                 target,
@@ -55,16 +58,16 @@ int main()
 
         simulator.step(
             drone,
-            command,
+            cmd,
             dt);
 
-        file
-            << t << ","
-            << target.x << ","
-            << target.y << ","
-            << drone.x << ","
-            << drone.y
-            << "\n";
+        file << t << ","
+     << target.x << "," << target.y << "," << target.z << ","
+     << drone.x << "," << drone.y << "," << drone.z << ","
+     << drone.x_dot << "," << drone.y_dot << "," << drone.z_dot << ","
+     << target.vx << "," << target.vy << "," << target.vz << ","
+     << cmd.vx_cmd << "," << cmd.vy_cmd << "," << cmd.vz_cmd
+     << "\n";
     }
 
     return 0;
