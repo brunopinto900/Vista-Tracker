@@ -1,146 +1,273 @@
-import pandas as pd
+#!/usr/bin/env python3
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Rectangle
+import yaml
 
-df = pd.read_csv("../data/trajectory.csv")
+# ============================================================
+# LOAD LOG
+# ============================================================
 
-t = df["t"]
+LOG_FILE = "../data/log.csv"
+CONFIG_FILE = "../config/config.yaml"
 
-# =========================
-# FIGURE (2x2 GRID)
-# =========================
-fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+df = pd.read_csv(LOG_FILE)
 
-ax_motion = axs[0, 0]
-ax_vel = axs[0, 1]
-ax_error = axs[1, 0]
-ax_empty = axs[1, 1]
+# ============================================================
+# LOAD OBSTACLES FROM YAML
+# ============================================================
 
-# =========================
-# MOTION PLOT (TOP LEFT)
-# =========================
-ax_motion.set_title("2D Tracking")
-ax_motion.set_xlabel("X [m]")
-ax_motion.set_ylabel("Y [m]")
-ax_motion.set_aspect("equal")
-ax_motion.grid(True)
+with open(CONFIG_FILE, "r") as f:
+    cfg = yaml.safe_load(f)
 
-ax_motion.set_xlim(
-    min(df["target_x"].min(), df["drone_x"].min()) - 2,
-    max(df["target_x"].max(), df["drone_x"].max()) + 2
+obstacles = cfg.get("world", {}).get("obstacles", [])
+
+# ============================================================
+# DERIVED SIGNALS
+# ============================================================
+
+DESIRED_DISTANCE = cfg.get("controller", {}).get("desired_distance")
+
+df["distance"] = np.sqrt(
+    (df["target_x"] - df["drone_x"])**2 +
+    (df["target_y"] - df["drone_y"])**2 +
+    (df["target_z"] - df["drone_z"])**2
 )
 
-ax_motion.set_ylim(
-    min(df["target_y"].min(), df["drone_y"].min()) - 2,
-    max(df["target_y"].max(), df["drone_y"].max()) + 2
+df["distance_error"] = df["distance"] - DESIRED_DISTANCE
+
+# ============================================================
+# FIGURE
+# ============================================================
+
+fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+
+ax_traj = axs[0, 0]
+ax_error = axs[0, 1]
+ax_vel = axs[1, 0]
+ax_placeholder = axs[1, 1]
+
+# ============================================================
+# TRAJECTORY PLOT
+# ============================================================
+
+ax_traj.set_title("Drone Tracking Scenario")
+ax_traj.set_xlabel("X [m]")
+ax_traj.set_ylabel("Y [m]")
+ax_traj.grid(True)
+
+# Plot complete target trajectory as reference
+ax_traj.plot(
+    df["target_x"],
+    df["target_y"],
+    "g--",
+    linewidth=1,
+    label="Target trajectory"
 )
 
-target_pt, = ax_motion.plot([], [], "ro", label="Target")
-drone_pt, = ax_motion.plot([], [], "bo", label="Drone")
+# Obstacles
+for obs in obstacles:
+    x = obs["x"]
+    y = obs["y"]
+    size = obs["size"]
 
-target_path, = ax_motion.plot([], [], "r--", alpha=0.5)
-drone_path, = ax_motion.plot([], [], "b--", alpha=0.5)
+    rect = Rectangle(
+        (x - size, y - size),
+        2 * size,
+        2 * size,
+        fill=False
+    )
 
-circle, = ax_motion.plot([], [], "g--", alpha=0.5, label="4m constraint")
+    ax_traj.add_patch(rect)
 
-ax_motion.legend()
+# Animated elements
+drone_path, = ax_traj.plot([], [], label="Drone trajectory")
+drone_marker, = ax_traj.plot([], [], "o")
+target_marker, = ax_traj.plot([], [], "o")
 
-# =========================
-# VELOCITIES (TOP RIGHT)
-# =========================
-ax_vel.set_title("Velocities")
+desired_circle, = ax_traj.plot(
+    [],
+    [],
+    "--",
+    linewidth=1,
+    label="Desired distance"
+)
 
-vx_d, = ax_vel.plot([], [], "b", label="drone vx")
-vy_d, = ax_vel.plot([], [], "g", label="drone vy")
-vz_d, = ax_vel.plot([], [], "r", label="drone vz")
+ax_traj.legend()
 
-vx_t, = ax_vel.plot([], [], "b--", label="target vx")
-vy_t, = ax_vel.plot([], [], "g--", label="target vy")
-vz_t, = ax_vel.plot([], [], "r--", label="target vz")
+# Axis limits
+margin = 2.0
 
-ax_vel.set_xlim(0, df["t"].max())
-ax_vel.set_ylim(-2, 2)
-ax_vel.grid(True)
-ax_vel.legend()
+xmin = min(df["drone_x"].min(), df["target_x"].min()) - margin
+xmax = max(df["drone_x"].max(), df["target_x"].max()) + margin
 
-# =========================
-# ERROR (BOTTOM LEFT)
-# =========================
+ymin = min(df["drone_y"].min(), df["target_y"].min()) - margin
+ymax = max(df["drone_y"].max(), df["target_y"].max()) + margin
+
+ax_traj.set_xlim(xmin, xmax)
+ax_traj.set_ylim(ymin, ymax)
+ax_traj.set_aspect("equal")
+
+# ============================================================
+# DISTANCE ERROR PLOT
+# ============================================================
+
 ax_error.set_title("Distance Error")
-
-err_line, = ax_error.plot([], [], "k")
-
-ax_error.set_xlim(0, df["t"].max())
-ax_error.set_ylim(0, 10)
+ax_error.set_xlabel("Time [s]")
+ax_error.set_ylabel("Error [m]")
 ax_error.grid(True)
 
-# =========================
-# EMPTY (BOTTOM RIGHT)
-# =========================
-ax_empty.set_title("Placeholder")
-ax_empty.axis("off")
+error_line, = ax_error.plot([], [])
 
-# =========================
-# UPDATE FUNCTION
-# =========================
+tmax = max(df["t"].max(), 1e-3)
+
+ax_error.set_xlim(0, tmax)
+
+err_min = df["distance_error"].min()
+err_max = df["distance_error"].max()
+
+if abs(err_max - err_min) < 1e-6:
+    err_min -= 1
+    err_max += 1
+
+ax_error.set_ylim(err_min - 0.5, err_max + 0.5)
+
+# ============================================================
+# VELOCITIES
+# ============================================================
+
+ax_vel.set_title("Velocities")
+ax_vel.set_xlabel("Time [s]")
+ax_vel.set_ylabel("Velocity [m/s]")
+ax_vel.grid(True)
+
+drone_vx_line, = ax_vel.plot([], [], label="Drone vx")
+drone_vy_line, = ax_vel.plot([], [], label="Drone vy")
+
+target_vx_line, = ax_vel.plot([], [], label="Target vx")
+target_vy_line, = ax_vel.plot([], [], label="Target vy")
+
+ax_vel.legend()
+
+ax_vel.set_xlim(0, tmax)
+
+vel_min = min(
+    df["drone_vx"].min(),
+    df["drone_vy"].min(),
+    df["target_vx"].min(),
+    df["target_vy"].min()
+)
+
+vel_max = max(
+    df["drone_vx"].max(),
+    df["drone_vy"].max(),
+    df["target_vx"].max(),
+    df["target_vy"].max()
+)
+
+if abs(vel_max - vel_min) < 1e-6:
+    vel_min -= 1
+    vel_max += 1
+
+ax_vel.set_ylim(vel_min - 0.5, vel_max + 0.5)
+
+# ============================================================
+# PLACEHOLDER
+# ============================================================
+
+ax_placeholder.set_title("Future Metrics")
+ax_placeholder.axis("off")
+
+# ============================================================
+# ANIMATION
+# ============================================================
+
+theta = np.linspace(0, 2*np.pi, 100)
+
 def update(i):
 
-    # ---------- motion ----------
-    tx = float(df["target_x"].iloc[i])
-    ty = float(df["target_y"].iloc[i])
-    dx = df["drone_x"][i]
-    dy = df["drone_y"][i]
+    # -------------------------
+    # Trajectory
+    # -------------------------
 
-    target_pt.set_data([tx], [ty])
-    drone_pt.set_data([dx], [dy])
-
-    target_path.set_data(df["target_x"][:i], df["target_y"][:i])
-    drone_path.set_data(df["drone_x"][:i], df["drone_y"][:i])
-
-    # 4m circle
-    theta = np.linspace(0, 2*np.pi, 80)
-    circle.set_data(
-        tx + 4*np.cos(theta),
-        ty + 4*np.sin(theta)
+    drone_path.set_data(
+        df["drone_x"][:i+1],
+        df["drone_y"][:i+1]
     )
 
-    # ---------- velocity ----------
-    vx_d.set_data(t[:i], df["vx_cmd"][:i])
-    vy_d.set_data(t[:i], df["vy_cmd"][:i])
-    vz_d.set_data(t[:i], df["vz_cmd"][:i])
-
-    vx_t.set_data(t[:i], df["target_vx"][:i])
-    vy_t.set_data(t[:i], df["target_vy"][:i])
-    vz_t.set_data(t[:i], df["target_vz"][:i])
-
-    # ---------- error ----------
-    err = np.sqrt(
-        (df["target_x"][:i] - df["drone_x"][:i])**2 +
-        (df["target_y"][:i] - df["drone_y"][:i])**2 +
-        (df["target_z"][:i] - df["drone_z"][:i])**2
+    drone_marker.set_data(
+        [df["drone_x"][i]],
+        [df["drone_y"][i]]
     )
 
-    err_line.set_data(t[:i], err)
+    target_marker.set_data(
+        [df["target_x"][i]],
+        [df["target_y"][i]]
+    )
+
+    tx = df["target_x"][i]
+    ty = df["target_y"][i]
+
+    desired_circle.set_data(
+        tx + DESIRED_DISTANCE * np.cos(theta),
+        ty + DESIRED_DISTANCE * np.sin(theta)
+    )
+
+    # -------------------------
+    # Distance error
+    # -------------------------
+
+    error_line.set_data(
+        df["t"][:i+1],
+        df["distance_error"][:i+1]
+    )
+
+    # -------------------------
+    # Velocities
+    # -------------------------
+
+    drone_vx_line.set_data(
+        df["t"][:i+1],
+        df["drone_vx"][:i+1]
+    )
+
+    drone_vy_line.set_data(
+        df["t"][:i+1],
+        df["drone_vy"][:i+1]
+    )
+
+    target_vx_line.set_data(
+        df["t"][:i+1],
+        df["target_vx"][:i+1]
+    )
+
+    target_vy_line.set_data(
+        df["t"][:i+1],
+        df["target_vy"][:i+1]
+    )
 
     return (
-        target_pt, drone_pt,
-        target_path, drone_path,
-        circle,
-        vx_d, vy_d, vz_d,
-        vx_t, vy_t, vz_t,
-        err_line
+        drone_path,
+        drone_marker,
+        target_marker,
+        desired_circle,
+        error_line,
+        drone_vx_line,
+        drone_vy_line,
+        target_vx_line,
+        target_vy_line
     )
 
-# =========================
-# ANIMATION
-# =========================
 ani = FuncAnimation(
     fig,
     update,
     frames=len(df),
-    interval=30,
-    blit=False
+    interval=20,
+    blit=False,
+    repeat=False
 )
 
 plt.tight_layout()

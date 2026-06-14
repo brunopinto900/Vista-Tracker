@@ -21,9 +21,9 @@ int main()
     PIDController   controller(cfg.controller.kp,
                                cfg.controller.ki,
                                cfg.controller.kd);
-    TrajectoryPlanner planner;
+    TrajectoryPlanner planner(cfg.controller.desired_distance);
 
-    std::ofstream file("../../data/trajectory.csv");
+    std::ofstream file("../../data/log.csv");
 
     file << "t,"
          << "target_x,target_y,target_z,"

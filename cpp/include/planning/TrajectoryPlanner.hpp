@@ -5,13 +5,19 @@
 
 struct TrajectoryPlanner
 {
+    explicit TrajectoryPlanner(double desired_distance)
+        : desired_distance_(desired_distance) {}
+
     State computeDesired(const State& /*drone*/,
-                         const TargetState& target)
+                         const TargetState& target) const
     {
         State ref{};
-        ref.x = target.x - 4.0;
+        ref.x = target.x - desired_distance_;
         ref.y = target.y;
         ref.z = target.z;
         return ref;
     }
+
+private:
+    double desired_distance_;
 };

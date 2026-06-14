@@ -5,9 +5,10 @@
 
 struct ControllerConfig
 {
-    double kp = 1.0;
-    double ki = 0.0;
-    double kd = 0.0;
+    double kp               = 1.0;
+    double ki               = 0.0;
+    double kd               = 0.0;
+    double desired_distance = 4.0;
 };
 
 struct Config
