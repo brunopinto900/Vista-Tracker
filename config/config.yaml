@@ -17,11 +17,16 @@ sim:
 
 controller:
   kp: 1.0
-  ki: 0.0
+  ki: 0.2
   kd: 0.2
   desired_distance: 4.0
 
 world:
+  grid:
+    x_min: -12.5
+    x_max:  12.5
+    y_min: -12.5
+    y_max:  12.5
   obstacles:
     - x: -2
       y: 0
