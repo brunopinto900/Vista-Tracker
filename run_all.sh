@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+cd cpp
+mkdir -p build
+cd build
+cmake ..
+make -j$(nproc)
+./tracker
+
+cd ../../python
+python3 visualize.py
