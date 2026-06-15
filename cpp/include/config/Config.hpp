@@ -3,6 +3,11 @@
 #include "models/TargetState.hpp"
 #include "world/World.hpp"
 
+struct EstimatorConfig
+{
+    int horizon = 1;
+};
+
 struct ControllerConfig
 {
     double kp               = 1.0;
@@ -24,6 +29,7 @@ struct Config
         double T;
     } sim;
 
+    EstimatorConfig  estimator;
     ControllerConfig controller;
 
     World world;

@@ -23,10 +23,17 @@ Config ConfigLoader::load(
     cfg.sim.dt = root["sim"]["dt"].as<double>();
     cfg.sim.T  = root["sim"]["T"].as<double>();
 
+    cfg.estimator.horizon = root["estimator"]["horizon"].as<int>();
+
     cfg.controller.kp               = root["controller"]["kp"].as<double>();
     cfg.controller.ki               = root["controller"]["ki"].as<double>();
     cfg.controller.kd               = root["controller"]["kd"].as<double>();
     cfg.controller.desired_distance = root["controller"]["desired_distance"].as<double>();
+
+    cfg.world.grid.x_min = root["world"]["grid"]["x_min"].as<double>();
+    cfg.world.grid.x_max = root["world"]["grid"]["x_max"].as<double>();
+    cfg.world.grid.y_min = root["world"]["grid"]["y_min"].as<double>();
+    cfg.world.grid.y_max = root["world"]["grid"]["y_max"].as<double>();
 
     for (auto o : root["world"]["obstacles"])
     {

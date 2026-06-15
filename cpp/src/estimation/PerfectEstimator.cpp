@@ -1,5 +1,8 @@
 #include "estimation/PerfectEstimator.hpp"
 
+PerfectEstimator::PerfectEstimator(int horizon)
+    : horizon_(horizon) {}
+
 TargetEstimate PerfectEstimator::update(const Detection& det, double dt)
 {
     PredictedTargetState s;
@@ -18,7 +21,20 @@ TargetEstimate PerfectEstimator::update(const Detection& det, double dt)
     prev_valid_ = det.valid;
 
     TargetEstimate est;
-    est.horizon   = { s };
+    est.horizon.reserve(horizon_);
     est.timestamp = det.timestamp;
+
+    for (int k = 0; k < horizon_; ++k)
+    {
+        PredictedTargetState step;
+        step.x  = s.x  + s.vx * k * dt;
+        step.y  = s.y  + s.vy * k * dt;
+        step.z  = s.z  + s.vz * k * dt;
+        step.vx = s.vx;
+        step.vy = s.vy;
+        step.vz = s.vz;
+        est.horizon.push_back(step);
+    }
+
     return est;
 }

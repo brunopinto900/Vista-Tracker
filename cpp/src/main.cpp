@@ -1,4 +1,5 @@
 #include <fstream>
+#include <iostream>
 
 #include "config/ConfigLoader.hpp"
 #include "sim_impl/KinematicSim.hpp"
@@ -17,9 +18,29 @@ int main()
     drone.y = cfg.drone_init.y;
     drone.z = cfg.drone_init.z;
 
+    std::cout << "[config] drone_init      x=" << cfg.drone_init.x
+              << " y=" << cfg.drone_init.y
+              << " z=" << cfg.drone_init.z << "\n"
+              << "[config] target_init     x=" << cfg.target_init.x
+              << " y=" << cfg.target_init.y
+              << " z=" << cfg.target_init.z
+              << " vx=" << cfg.target_init.vx
+              << " vy=" << cfg.target_init.vy
+              << " vz=" << cfg.target_init.vz << "\n"
+              << "[config] sim             dt=" << cfg.sim.dt
+              << " T=" << cfg.sim.T << "\n"
+              << "[config] estimator       horizon=" << cfg.estimator.horizon << "\n"
+              << "[config] controller      kp=" << cfg.controller.kp
+              << " ki=" << cfg.controller.ki
+              << " kd=" << cfg.controller.kd
+              << " desired_distance=" << cfg.controller.desired_distance << "\n"
+              << "[config] world.grid      x=[" << cfg.world.grid.x_min << ", " << cfg.world.grid.x_max << "]"
+              << " y=[" << cfg.world.grid.y_min << ", " << cfg.world.grid.y_max << "]\n"
+              << "[config] world.obstacles " << cfg.world.obstacles.size() << " loaded\n";
+
     KinematicSim          sim(drone, cfg.target_init, cfg.world);
     GroundTruthPerception perception(sim);
-    PerfectEstimator      estimator;
+    PerfectEstimator      estimator(cfg.estimator.horizon);
     FakeESDFMap           esdf(cfg.world);
     SimplePlanner         planner(cfg.controller.desired_distance);
     PIDController         controller(cfg.controller.kp,
