@@ -1,10 +1,10 @@
 #pragma once
 
+#include "models/RGBImage.hpp"
+#include "models/DepthImage.hpp"
+
 struct SensorData
 {
-    // Placeholder for future:
-    // - RGB image
-    // - depth image
-    // - lidar scan
-    // - IMU
+    RGBImage  rgb;
+    DepthImage depth;
 };

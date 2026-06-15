@@ -4,6 +4,7 @@
 #include "sim_impl/KinematicSim.hpp"
 #include "perception/GroundTruthPerception.hpp"
 #include "estimation/PerfectEstimator.hpp"
+#include "mapping/FakeESDFMap.hpp"
 #include "planning/SimplePlanner.hpp"
 #include "control/PIDController.hpp"
 
@@ -19,6 +20,7 @@ int main()
     KinematicSim          sim(drone, cfg.target_init, cfg.world);
     GroundTruthPerception perception(sim);
     PerfectEstimator      estimator;
+    FakeESDFMap           esdf(cfg.world);
     SimplePlanner         planner(cfg.controller.desired_distance);
     PIDController         controller(cfg.controller.kp,
                                      cfg.controller.ki,
@@ -40,7 +42,7 @@ int main()
 
         Detection      det = perception.update();
         TargetEstimate est = estimator.update(det, cfg.sim.dt);
-        Reference      ref = planner.update(d, est);
+        Reference      ref = planner.update(d, est, esdf);
         ControlCommand cmd = controller.update(d, ref, cfg.sim.dt);
 
         sim.update(cmd, cfg.sim.dt);

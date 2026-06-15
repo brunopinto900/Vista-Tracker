@@ -9,8 +9,9 @@ public:
         : desired_distance_(desired_distance) {}
 
     Reference update(
-        const State& /*drone*/,
-        const TargetEstimate& target) override
+        const State&          /*drone*/,
+        const TargetEstimate& target,
+        const IESDFMap&       /*esdf*/) override
     {
         const auto& t = target.horizon[0];
 
