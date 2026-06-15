@@ -2,26 +2,27 @@
 
 #include "config/ConfigLoader.hpp"
 #include "sim_impl/KinematicSim.hpp"
+#include "perception/GroundTruthPerception.hpp"
+#include "estimation/PerfectEstimator.hpp"
+#include "planning/SimplePlanner.hpp"
 #include "control/PIDController.hpp"
-#include "planning/TrajectoryPlanner.hpp"
 
 int main()
 {
-    Config cfg = ConfigLoader::load(
-        "../../config/config.yaml");
+    Config cfg = ConfigLoader::load("../../config/config.yaml");
 
     State drone{};
     drone.x = cfg.drone_init.x;
     drone.y = cfg.drone_init.y;
     drone.z = cfg.drone_init.z;
 
-    TargetState target = cfg.target_init;
-
-    KinematicSim    sim(drone, target, cfg.world);
-    PIDController   controller(cfg.controller.kp,
-                               cfg.controller.ki,
-                               cfg.controller.kd);
-    TrajectoryPlanner planner(cfg.controller.desired_distance);
+    KinematicSim          sim(drone, cfg.target_init, cfg.world);
+    GroundTruthPerception perception(sim);
+    PerfectEstimator      estimator;
+    SimplePlanner         planner(cfg.controller.desired_distance);
+    PIDController         controller(cfg.controller.kp,
+                                     cfg.controller.ki,
+                                     cfg.controller.kd);
 
     std::ofstream file("../../data/log.csv");
 
@@ -35,14 +36,14 @@ int main()
     for (double t = 0.0; t < cfg.sim.T; t += cfg.sim.dt)
     {
         State       d  = sim.getDroneState();
-        TargetState tr = sim.getTargetState();
+        TargetState tr = sim.getTargetTruth();
 
-        State ref = planner.computeDesired(d, tr);
-
+        Detection      det = perception.update();
+        TargetEstimate est = estimator.update(det, cfg.sim.dt);
+        Reference      ref = planner.update(d, est);
         ControlCommand cmd = controller.update(d, ref, cfg.sim.dt);
 
-        sim.applyControl(cmd, cfg.sim.dt);
-        sim.stepTarget(cfg.sim.dt);
+        sim.update(cmd, cfg.sim.dt);
 
         file << t         << ","
              << tr.x      << "," << tr.y  << "," << tr.z  << ","

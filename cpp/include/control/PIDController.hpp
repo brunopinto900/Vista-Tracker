@@ -13,15 +13,13 @@ public:
 
     ControlCommand update(
         const State& drone,
-        const State& desired,
+        const Reference& reference,
         double dt) override
     {
         ControlCommand cmd;
-
-        cmd.vx = pid_x_.update(desired.x - drone.x, dt);
-        cmd.vy = pid_y_.update(desired.y - drone.y, dt);
-        cmd.vz = pid_z_.update(desired.z - drone.z, dt);
-
+        cmd.vx = pid_x_.update(reference.x - drone.x, dt);
+        cmd.vy = pid_y_.update(reference.y - drone.y, dt);
+        cmd.vz = pid_z_.update(reference.z - drone.z, dt);
         return cmd;
     }
 

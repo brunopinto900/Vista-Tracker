@@ -2,50 +2,34 @@
 
 #include "sim/ISimulator.hpp"
 #include "world/World.hpp"
-#include "sensing/CameraModel.hpp"
 
 class KinematicSim : public ISimulator
 {
-private:
-    State       drone;
-    TargetState target;
-    World       world;
-    CameraModel camera;
-
 public:
     KinematicSim(const State& d, const TargetState& t, const World& w)
-        : drone(d), target(t), world(w) {}
+        : drone_(d), target_(t), world_(w) {}
 
-    State       getDroneState()  const override { return drone;  }
-    TargetState getTargetState() const override { return target; }
-
-    void applyControl(const ControlCommand& u, double dt) override
+    void update(const ControlCommand& cmd, double dt) override
     {
-        drone.x += u.vx * dt;
-        drone.y += u.vy * dt;
-        drone.z += u.vz * dt;
+        drone_.x += cmd.vx * dt;
+        drone_.y += cmd.vy * dt;
+        drone_.z += cmd.vz * dt;
 
-        // keep velocity fields consistent so they can be logged
-        drone.vx = u.vx;
-        drone.vy = u.vy;
-        drone.vz = u.vz;
+        drone_.vx = cmd.vx;
+        drone_.vy = cmd.vy;
+        drone_.vz = cmd.vz;
+
+        target_.x += target_.vx * dt;
+        target_.y += target_.vy * dt;
+        target_.z += target_.vz * dt;
     }
 
-    void stepTarget(double dt) override
-    {
-        target.x += target.vx * dt;
-        target.y += target.vy * dt;
-        target.z += target.vz * dt;
-    }
+    State       getDroneState()  const override { return drone_;  }
+    TargetState getTargetTruth() const override { return target_; }
+    SensorData  getSensors()     const override { return {};       }
 
-    std::vector<Obstacle> getVisibleObstacles() const override
-    {
-        std::vector<Obstacle> visible;
-
-        for (const auto& o : world.obstacles)
-            if (camera.isVisible(drone, o))
-                visible.push_back(o);
-
-        return visible;
-    }
+private:
+    State       drone_;
+    TargetState target_;
+    World       world_;
 };
