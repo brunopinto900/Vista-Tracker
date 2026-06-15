@@ -6,22 +6,12 @@
 class PIDController : public IController
 {
 public:
-    PIDController(double kp, double ki, double kd)
-        : pid_x_(kp, ki, kd),
-          pid_y_(kp, ki, kd),
-          pid_z_(kp, ki, kd) {}
+    PIDController(double kp, double ki, double kd);
 
     ControlCommand update(
-        const State& drone,
+        const State&     drone,
         const Reference& reference,
-        double dt) override
-    {
-        ControlCommand cmd;
-        cmd.vx = pid_x_.update(reference.x - drone.x, dt);
-        cmd.vy = pid_y_.update(reference.y - drone.y, dt);
-        cmd.vz = pid_z_.update(reference.z - drone.z, dt);
-        return cmd;
-    }
+        double           dt) override;
 
 private:
     PID pid_x_;

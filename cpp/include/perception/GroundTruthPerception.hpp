@@ -6,14 +6,9 @@
 class GroundTruthPerception : public IPerception
 {
 public:
-    explicit GroundTruthPerception(const ISimulator& sim)
-        : sim_(sim) {}
+    explicit GroundTruthPerception(const ISimulator& sim);
 
-    Detection update() override
-    {
-        TargetState tr = sim_.getTargetTruth();
-        return { true, tr.x, tr.y, tr.z, 0.0 };
-    }
+    Detection update() override;
 
 private:
     const ISimulator& sim_;

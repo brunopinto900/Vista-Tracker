@@ -14,6 +14,12 @@ add_executable(
 
     src/main.cpp
     src/config/ConfigLoader.cpp
+    src/control/PIDController.cpp
+    src/estimation/PerfectEstimator.cpp
+    src/mapping/FakeESDFMap.cpp
+    src/perception/GroundTruthPerception.cpp
+    src/planning/SimplePlanner.cpp
+    src/sim_impl/KinematicSim.cpp
 )
 
 target_link_libraries(
