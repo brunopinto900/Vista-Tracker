@@ -109,11 +109,13 @@ cd python
 python3 visualize.py
 ```
 
-Or use the convenience script:
+Or use the convenience script (builds, simulates, and visualises in one step):
 
 ```bash
-cd scripts
-./run.sh
+./scripts/run.sh                # default config
+./scripts/run.sh go_around      # named scenario
+./scripts/run.sh --list         # list available scenarios
+./scripts/run.sh --help         # usage
 ```
 
 ---
