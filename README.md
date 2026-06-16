@@ -15,6 +15,17 @@ make -j$(nproc)
 
 ---
 
+## Test
+
+```bash
+cd cpp/build
+./vista_tests
+```
+
+Google Test is fetched automatically by CMake on first configure — no system install needed. Tests cover `ConfigLoader` (YAML loading, `base:` inheritance, obstacle ownership) and `WaypointFollower` (waypoint reaching, hold timing, braking, loop flag, yaw rate limit).
+
+---
+
 ## Run
 
 ```bash
@@ -37,7 +48,7 @@ make -j$(nproc)
 
 ## Scenarios
 
-Scenario files live in `config/scenarios/`. Each one declares a `base: ../config.yaml` and only overrides what differs — drone start, world bounds, obstacles, and target trajectory. Shared params (`dt`, `horizon`, `desired_distance`) are inherited from the base.
+Scenario files live in `config/scenarios/`. Each one declares a `base: ../base.yaml` and only overrides what differs — drone start, world bounds, obstacles, and target trajectory. Shared params (`dt`, `horizon`, `desired_distance`) are inherited from the base.
 
 | Scenario | Description |
 |---|---|
