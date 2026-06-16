@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <filesystem>
 
 #include "config/ConfigLoader.hpp"
 #include "sim_impl/KinematicSim.hpp"
@@ -10,11 +11,46 @@
 #include "planning/SimplePlanner.hpp"
 #include "control/PIDController.hpp"
 
+namespace fs = std::filesystem;
+
+static const std::string kDefaultConfig   = "../../config/config.yaml";
+static const std::string kScenariosDir    = "../../config/scenarios";
+
+static void listScenarios()
+{
+    std::cout << "Available scenarios:\n";
+    for (const auto& entry : fs::directory_iterator(kScenariosDir))
+        if (entry.path().extension() == ".yaml")
+            std::cout << "  " << entry.path().stem().string() << "\n";
+}
+
+static std::string resolveConfig(const std::string& arg)
+{
+    // Full or relative path that exists → use as-is
+    if (fs::exists(arg))
+        return arg;
+
+    // Bare name → look in scenarios dir
+    std::string candidate = kScenariosDir + "/" + arg + ".yaml";
+    if (fs::exists(candidate))
+        return candidate;
+
+    std::cerr << "error: scenario '" << arg << "' not found.\n"
+              << "       tried: " << candidate << "\n";
+    std::exit(1);
+}
+
 int main(int argc, char* argv[])
 {
+    if (argc > 1 && std::string(argv[1]) == "--list")
+    {
+        listScenarios();
+        return 0;
+    }
+
     const std::string config_path = (argc > 1)
-        ? argv[1]
-        : "../../config/config.yaml";
+        ? resolveConfig(argv[1])
+        : kDefaultConfig;
 
     Config cfg = ConfigLoader::load(config_path);
 
