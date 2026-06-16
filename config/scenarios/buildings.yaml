@@ -1,0 +1,57 @@
+base: ../config.yaml
+
+# Scenario: buildings
+# Person walks an L-shaped urban route, slows at corners, stops at a junction.
+
+drone_init:
+  x: -5.0
+  y:  2.0
+  z:  3.0
+
+sim:
+  T: 25.0
+
+controller:
+  kp: 1.2
+  ki: 0.1
+  kd: 0.3
+
+target_trajectory:
+  type: person
+  max_accel:         0.8
+  max_speed:         2.0
+  max_lateral_accel: 4.0
+  loop: false
+  waypoints:
+    - pos: [0.0,  2.0, 0.0]
+      speed: 1.5
+    - pos: [3.5,  2.0, 0.0]
+      speed: 0.4
+      hold: 0.5
+    - pos: [3.5, -2.0, 0.0]
+      speed: 1.2
+    - pos: [7.0, -2.0, 0.0]
+      speed: 0.0
+      hold: 2.0
+    - pos: [11.0, -2.0, 0.0]
+      speed: 2.0
+
+world:
+  grid:
+    x_min: -6.0
+    x_max:  13.0
+    y_min:  -5.0
+    y_max:   7.0
+  obstacles:
+    - x: 1.5
+      y: 4.5
+      size: 1.2
+    - x: 5.0
+      y: 0.0
+      size: 1.0
+    - x: 4.0
+      y: 6.0
+      size: 1.5
+    - x: 8.5
+      y: 4.0
+      size: 1.3

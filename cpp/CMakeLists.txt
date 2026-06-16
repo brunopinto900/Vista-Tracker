@@ -20,6 +20,7 @@ add_executable(
     src/perception/GroundTruthPerception.cpp
     src/planning/SimplePlanner.cpp
     src/sim_impl/KinematicSim.cpp
+    src/sim_impl/WaypointFollower.cpp
 )
 
 target_link_libraries(

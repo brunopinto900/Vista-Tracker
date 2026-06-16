@@ -1,7 +1,20 @@
 #include "sim_impl/KinematicSim.hpp"
 
-KinematicSim::KinematicSim(const State& d, const TargetState& t, const World& w)
-    : drone_(d), target_(t), world_(w) {}
+KinematicSim::KinematicSim(const State&            drone,
+                            const TargetTrajectory& traj,
+                            const World&            world)
+    : drone_(drone)
+    , world_(world)
+    , follower_(traj, [&] {
+        TargetState t;
+        t.x = traj.waypoints[0].x;
+        t.y = traj.waypoints[0].y;
+        t.z = traj.waypoints[0].z;
+        return t;
+    }())
+{
+    target_ = follower_.step(0.0);
+}
 
 void KinematicSim::update(const ControlCommand& cmd, double dt)
 {
@@ -13,9 +26,7 @@ void KinematicSim::update(const ControlCommand& cmd, double dt)
     drone_.vy = cmd.vy;
     drone_.vz = cmd.vz;
 
-    target_.x += target_.vx * dt;
-    target_.y += target_.vy * dt;
-    target_.z += target_.vz * dt;
+    target_ = follower_.step(dt);
 }
 
 State       KinematicSim::getDroneState()  const { return drone_;  }

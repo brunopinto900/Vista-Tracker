@@ -1,5 +1,6 @@
 #include <fstream>
 #include <iostream>
+#include <string>
 
 #include "config/ConfigLoader.hpp"
 #include "sim_impl/KinematicSim.hpp"
@@ -9,36 +10,44 @@
 #include "planning/SimplePlanner.hpp"
 #include "control/PIDController.hpp"
 
-int main()
+int main(int argc, char* argv[])
 {
-    Config cfg = ConfigLoader::load("../../config/config.yaml");
+    const std::string config_path = (argc > 1)
+        ? argv[1]
+        : "../../config/config.yaml";
+
+    Config cfg = ConfigLoader::load(config_path);
+
+    std::cout << "[config] scenario        " << config_path << "\n"
+              << "[config] drone_init      x=" << cfg.drone_init.x
+              << " y=" << cfg.drone_init.y
+              << " z=" << cfg.drone_init.z << "\n"
+              << "[config] trajectory      type=" << cfg.trajectory.type
+              << " waypoints=" << cfg.trajectory.waypoints.size()
+              << " max_speed=" << cfg.trajectory.max_speed
+              << " max_accel=" << cfg.trajectory.max_accel
+              << " max_lateral_accel=" << cfg.trajectory.max_lateral_accel
+              << " loop=" << (cfg.trajectory.loop ? "true" : "false") << "\n"
+              << "[config] sim             dt=" << cfg.sim.dt
+              << " T=" << cfg.sim.T << "\n"
+              << "[config] estimator       horizon=" << cfg.estimator.horizon
+              << " motion_model=" << cfg.estimator.motion_model << "\n"
+              << "[config] controller      kp=" << cfg.controller.kp
+              << " ki=" << cfg.controller.ki
+              << " kd=" << cfg.controller.kd
+              << " desired_distance=" << cfg.controller.desired_distance << "\n"
+              << "[config] world.grid      x=[" << cfg.world.grid.x_min
+              << ", " << cfg.world.grid.x_max << "]"
+              << " y=[" << cfg.world.grid.y_min
+              << ", " << cfg.world.grid.y_max << "]\n"
+              << "[config] world.obstacles " << cfg.world.obstacles.size() << " loaded\n";
 
     State drone{};
     drone.x = cfg.drone_init.x;
     drone.y = cfg.drone_init.y;
     drone.z = cfg.drone_init.z;
 
-    std::cout << "[config] drone_init      x=" << cfg.drone_init.x
-              << " y=" << cfg.drone_init.y
-              << " z=" << cfg.drone_init.z << "\n"
-              << "[config] target_init     x=" << cfg.target_init.x
-              << " y=" << cfg.target_init.y
-              << " z=" << cfg.target_init.z
-              << " vx=" << cfg.target_init.vx
-              << " vy=" << cfg.target_init.vy
-              << " vz=" << cfg.target_init.vz << "\n"
-              << "[config] sim             dt=" << cfg.sim.dt
-              << " T=" << cfg.sim.T << "\n"
-              << "[config] estimator       horizon=" << cfg.estimator.horizon << "\n"
-              << "[config] controller      kp=" << cfg.controller.kp
-              << " ki=" << cfg.controller.ki
-              << " kd=" << cfg.controller.kd
-              << " desired_distance=" << cfg.controller.desired_distance << "\n"
-              << "[config] world.grid      x=[" << cfg.world.grid.x_min << ", " << cfg.world.grid.x_max << "]"
-              << " y=[" << cfg.world.grid.y_min << ", " << cfg.world.grid.y_max << "]\n"
-              << "[config] world.obstacles " << cfg.world.obstacles.size() << " loaded\n";
-
-    KinematicSim          sim(drone, cfg.target_init, cfg.world);
+    KinematicSim          sim(drone, cfg.trajectory, cfg.world);
     GroundTruthPerception perception(sim);
     PerfectEstimator      estimator(cfg.estimator.horizon);
     FakeESDFMap           esdf(cfg.world);

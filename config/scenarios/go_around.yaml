@@ -1,0 +1,48 @@
+base: ../config.yaml
+
+# Scenario: go_around
+# Person approaches a large obstacle, veers left around it, resumes course.
+
+drone_init:
+  x: -6.0
+  y:  0.0
+  z:  2.0
+
+sim:
+  T: 20.0
+
+controller:
+  kp: 1.2
+  ki: 0.1
+  kd: 0.3
+
+target_trajectory:
+  type: person
+  max_accel:         1.0
+  max_speed:         2.0
+  max_lateral_accel: 4.0
+  loop: false
+  waypoints:
+    - pos: [0.0,  0.0, 0.0]
+      speed: 1.0
+    - pos: [2.0,  0.0, 0.0]
+      speed: 0.8
+    - pos: [3.0,  3.0, 0.0]
+      speed: 0.8
+    - pos: [5.0,  3.0, 0.0]
+      speed: 1.0
+    - pos: [7.0,  0.0, 0.0]
+      speed: 1.5
+    - pos: [14.0, 0.0, 0.0]
+      speed: 2.0
+
+world:
+  grid:
+    x_min: -8.0
+    x_max:  16.0
+    y_min:  -4.0
+    y_max:   6.0
+  obstacles:
+    - x: 4.0
+      y: 0.0
+      size: 1.5

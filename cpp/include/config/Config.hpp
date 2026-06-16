@@ -1,11 +1,13 @@
 #pragma once
 
-#include "models/TargetState.hpp"
+#include "models/TargetTrajectory.hpp"
 #include "world/World.hpp"
+#include <string>
 
 struct EstimatorConfig
 {
-    int horizon = 1;
+    int         horizon      = 1;
+    std::string motion_model = "CV";  // "CV" | "CTRV" | "CA"
 };
 
 struct ControllerConfig
@@ -22,8 +24,6 @@ struct Config
         double x, y, z;
     } drone_init;
 
-    TargetState target_init;
-
     struct {
         double dt;
         double T;
@@ -31,6 +31,7 @@ struct Config
 
     EstimatorConfig  estimator;
     ControllerConfig controller;
+    TargetTrajectory trajectory;
 
     World world;
 };

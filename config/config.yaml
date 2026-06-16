@@ -1,22 +1,27 @@
 drone_init:
-  x: -8
+  x: -8.0
   y: -2.0
-  z: 0
+  z:  0.0
 
-target_init:
-  x: 0
-  y: 0
-  z: 0
-  vx: 1.0
-  vy: 0
-  vz: 0
+target_trajectory:
+  type: person
+  max_accel:         1.2   # m/s²
+  max_speed:         2.0   # m/s  (brisk walking)
+  max_lateral_accel: 4.0   # m/s² (person can pivot freely)
+  loop: false
+  waypoints:
+    - pos: [0.0,   0.0, 0.0]
+      speed: 1.0
+    - pos: [100.0, 0.0, 0.0]
+      speed: 1.0
 
 sim:
   dt: 0.05
-  T: 10.0
+  T:  10.0
 
 estimator:
-  horizon: 10
+  horizon:      10
+  motion_model: CV   # CV | CTRV | CA
 
 controller:
   kp: 1.0
@@ -31,9 +36,9 @@ world:
     y_min: -12.5
     y_max:  12.5
   obstacles:
-    - x: -2
-      y: 0
-      size: 1
-    - x: 2
-      y: 1
-      size: 1
+    - x: -2.0
+      y:  0.0
+      size: 1.0
+    - x:  2.0
+      y:  1.0
+      size: 1.0
