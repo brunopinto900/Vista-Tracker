@@ -50,15 +50,20 @@ TargetState WaypointFollower::step(double dt)
         return state_;
     }
 
-    // ── Trapezoidal longitudinal profile ─────────────────────────────────────
+    // ── Longitudinal speed profile ────────────────────────────────────────────
+    // v_target = min(cruise_speed, braking_ramp)
+    //
+    // The braking ramp sqrt(2*max_accel*dist) is the maximum speed from which
+    // you can stop within `dist` at max deceleration.  Using this directly
+    // avoids the discrete-time chattering of the d_brake >= dist threshold,
+    // and gives a smooth, continuous deceleration curve.
     double cur_speed = std::sqrt(state_.vx * state_.vx +
                                  state_.vy * state_.vy +
                                  state_.vz * state_.vz);
 
-    double d_brake  = (cur_speed * cur_speed) /
-                      (2.0 * traj_.max_accel + 1e-9);
-    double v_target = (d_brake >= dist) ? 0.0
-                    : std::min(wp.speed, traj_.max_speed);
+    double v_cruise  = std::min(wp.speed, traj_.max_speed);
+    double v_brake   = std::sqrt(2.0 * traj_.max_accel * dist);
+    double v_target  = std::min(v_cruise, v_brake);
 
     double dv     = v_target - cur_speed;
     double dv_max = traj_.max_accel * dt;

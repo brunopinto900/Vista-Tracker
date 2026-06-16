@@ -1,0 +1,31 @@
+sim:
+  dt: 0.05
+  T: 10.0
+estimator:
+  horizon: 10
+  motion_model: CA
+controller:
+  kp: 1.5
+  ki: 0.2
+  kd: 0.1
+  desired_distance: 5.0
+drone_init:
+  x: 1.0
+  y: 2.0
+  z: 3.0
+target_trajectory:
+  type: person
+  max_accel: 1.0
+  max_speed: 2.0
+  max_lateral_accel: 4.0
+  loop: false
+  waypoints:
+    - pos: [0.0, 0.0, 0.0]
+      speed: 1.0
+world:
+  grid:
+    x_min: -5.0
+    x_max:  5.0
+    y_min: -5.0
+    y_max:  5.0
+  obstacles: []
