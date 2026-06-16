@@ -1,4 +1,4 @@
-base: ../config.yaml
+base: ../base.yaml
 
 # Scenario: corridor (forest-like)
 # Person moves through a natural tree corridor at varying speeds.

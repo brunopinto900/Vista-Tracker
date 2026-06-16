@@ -1,4 +1,4 @@
-base: ../config.yaml
+base: ../base.yaml
 
 # Scenario: buildings
 # Person walks an L-shaped urban route, slows at corners, stops at a junction.

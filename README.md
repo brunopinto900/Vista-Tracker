@@ -45,12 +45,28 @@ Scenario files live in `config/scenarios/`. Each one declares a `base: ../config
 | `buildings` | L-shaped urban route through building footprints, with a corner slow-down and junction stop |
 | `corridor` | Forest-like tree corridor — cautious entry, sprint through open section, narrow exit |
 
+### Config layout
+
+```
+config/
+  base.yaml          ← algorithm params only (dt, gains, horizon)
+  config.yaml        ← default standalone scenario (used by ./tracker)
+  scenarios/
+    go_around.yaml   ┐
+    buildings.yaml   ├─ each declares "base: ../base.yaml" and owns
+    corridor.yaml    ┘  drone_init, world, trajectory, and sim.T
+```
+
+**`base.yaml`** owns what is scenario-independent: `sim.dt`, `estimator.*`, `controller.*` defaults.
+**Scenario files** own the environment: `drone_init`, `world`, `target_trajectory`, `sim.T`.
+Scenarios can still override any `base.yaml` field (e.g. tighter PID gains for a fast-moving target).
+
 ### Adding a scenario
 
 Create `config/scenarios/my_scenario.yaml`:
 
 ```yaml
-base: ../config.yaml
+base: ../base.yaml
 
 drone_init:
   x: 0.0

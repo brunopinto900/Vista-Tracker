@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,17 +13,39 @@ from matplotlib.animation import FuncAnimation
 # LOAD LOG
 # ============================================================
 
-LOG_FILE    = "../data/log.csv"
-CONFIG_FILE = "../config/config.yaml"
+LOG_FILE = os.path.join(os.path.dirname(__file__), "../data/log.csv")
 
 df = pd.read_csv(LOG_FILE)
 
 # ============================================================
-# LOAD CONFIG FROM YAML
+# LOAD CONFIG FROM YAML  (supports base: inheritance)
 # ============================================================
 
-with open(CONFIG_FILE, "r") as f:
-    cfg = yaml.safe_load(f)
+def _deep_merge(base, override):
+    result = dict(base)
+    for key, val in override.items():
+        if key == "base":
+            continue
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
+
+def load_config(path):
+    with open(path) as f:
+        node = yaml.safe_load(f) or {}
+    if "base" in node:
+        base_path = os.path.join(os.path.dirname(os.path.abspath(path)),
+                                 node["base"])
+        base = load_config(base_path)
+        return _deep_merge(base, node)
+    return node
+
+_default_cfg = os.path.join(os.path.dirname(__file__), "../config/config.yaml")
+_cfg_path    = sys.argv[1] if len(sys.argv) > 1 else _default_cfg
+
+cfg = load_config(_cfg_path)
 
 obstacles        = cfg.get("world", {}).get("obstacles", [])
 grid             = cfg.get("world", {}).get("grid", {})

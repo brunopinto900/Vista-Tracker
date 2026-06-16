@@ -1,0 +1,16 @@
+# Algorithm parameters — scenario-independent.
+# Scenarios inherit from this via "base: ../base.yaml".
+# World, drone_init, target_trajectory, and sim.T live in the scenario.
+
+sim:
+  dt: 0.05            # timestep — same for all scenarios
+
+estimator:
+  horizon:      10
+  motion_model: CV    # CV | CTRV | CA
+
+controller:
+  kp:               1.0
+  ki:               0.2
+  kd:               0.2
+  desired_distance: 4.0

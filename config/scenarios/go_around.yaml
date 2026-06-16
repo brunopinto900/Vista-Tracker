@@ -1,4 +1,4 @@
-base: ../config.yaml
+base: ../base.yaml
 
 # Scenario: go_around
 # Person approaches a large obstacle, veers left around it, resumes course.

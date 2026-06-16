@@ -4,7 +4,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 BUILD="$ROOT/cpp/build"
-TRACKER="$BUILD/tracker"
 
 usage() {
     echo "Usage: $0 [scenario]"
@@ -22,6 +21,18 @@ usage() {
 if [[ "${1}" == "-h" || "${1}" == "--help" ]]; then
     usage
     exit 0
+fi
+
+# ── Resolve config path (absolute) ────────────────────────────────────────────
+if [[ "${1}" == "--list" || -z "${1}" ]]; then
+    CONFIG_ABS="$(realpath "$ROOT/config/config.yaml")"
+elif [[ -f "${1}" ]]; then
+    CONFIG_ABS="$(realpath "${1}")"
+elif [[ -f "$ROOT/config/scenarios/${1}.yaml" ]]; then
+    CONFIG_ABS="$(realpath "$ROOT/config/scenarios/${1}.yaml")"
+else
+    echo "error: scenario '${1}' not found" >&2
+    exit 1
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
@@ -47,4 +58,4 @@ fi
 # ── Visualise ─────────────────────────────────────────────────────────────────
 echo "[run] launching visualizer..."
 cd "$ROOT/python"
-python3 visualize.py
+python3 visualize.py "$CONFIG_ABS"
