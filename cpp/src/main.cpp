@@ -83,14 +83,15 @@ int main(int argc, char* argv[])
     drone.y = cfg.drone_init.y;
     drone.z = cfg.drone_init.z;
 
-    KinematicSim          sim(drone, cfg.trajectory, cfg.world);
+    KinematicSim          sim(drone, cfg.trajectory, cfg.world, cfg.drone.tau);
     GroundTruthPerception perception(sim);
     PerfectEstimator      estimator(cfg.estimator.horizon);
     FakeESDFMap           esdf(cfg.world);
     SimplePlanner         planner(cfg.controller.desired_distance);
     PIDController         controller(cfg.controller.kp,
                                      cfg.controller.ki,
-                                     cfg.controller.kd);
+                                     cfg.controller.kd,
+                                     cfg.controller.attitude_kp);
 
     std::ofstream file("../../data/log.csv");
 
@@ -98,8 +99,9 @@ int main(int argc, char* argv[])
          << "target_x,target_y,target_z,"
          << "drone_x,drone_y,drone_z,"
          << "drone_vx,drone_vy,drone_vz,"
+         << "drone_roll,drone_pitch,drone_yaw,"
          << "target_vx,target_vy,target_vz,"
-         << "vx_cmd,vy_cmd,vz_cmd\n";
+         << "roll_rate,pitch_rate,yaw_rate,thrust\n";
 
     for (double t = 0.0; t < cfg.sim.T; t += cfg.sim.dt)
     {
@@ -113,12 +115,14 @@ int main(int argc, char* argv[])
 
         sim.update(cmd, cfg.sim.dt);
 
-        file << t         << ","
-             << tr.x      << "," << tr.y  << "," << tr.z  << ","
-             << d.x       << "," << d.y   << "," << d.z   << ","
-             << d.vx      << "," << d.vy  << "," << d.vz  << ","
-             << tr.vx     << "," << tr.vy << "," << tr.vz << ","
-             << cmd.vx    << "," << cmd.vy << "," << cmd.vz
+        file << t              << ","
+             << tr.x           << "," << tr.y        << "," << tr.z        << ","
+             << d.x            << "," << d.y         << "," << d.z         << ","
+             << d.vx           << "," << d.vy        << "," << d.vz        << ","
+             << d.roll         << "," << d.pitch      << "," << d.yaw       << ","
+             << tr.vx          << "," << tr.vy        << "," << tr.vz       << ","
+             << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate << ","
+             << cmd.thrust
              << "\n";
     }
 

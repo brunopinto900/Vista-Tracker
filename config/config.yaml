@@ -2,6 +2,9 @@
 # Self-contained — no base: reference.
 # Used by ./tracker with no arguments.
 
+drone:
+  tau: 0.1
+
 drone_init:
   x: -8.0
   y:  0.0
@@ -32,6 +35,7 @@ controller:
   ki:               0.2
   kd:               0.2
   desired_distance: 4.0
+  attitude_kp:      5.0
 
 world:
   grid:

@@ -37,6 +37,11 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
         if (s["z"]) cfg.drone_init.z = s["z"].as<double>();
     }
 
+    if (auto s = n["drone"])
+    {
+        if (s["tau"]) cfg.drone.tau = s["tau"].as<double>();
+    }
+
     if (auto s = n["sim"])
     {
         if (s["dt"]) cfg.sim.dt = s["dt"].as<double>();
@@ -55,6 +60,7 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
         if (s["ki"])               cfg.controller.ki               = s["ki"].as<double>();
         if (s["kd"])               cfg.controller.kd               = s["kd"].as<double>();
         if (s["desired_distance"]) cfg.controller.desired_distance = s["desired_distance"].as<double>();
+        if (s["attitude_kp"])      cfg.controller.attitude_kp      = s["attitude_kp"].as<double>();
     }
 
     // Trajectory is replaced entirely when present (partial waypoint merge makes no sense)

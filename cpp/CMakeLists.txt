@@ -41,7 +41,10 @@ enable_testing()
 add_executable(vista_tests
     tests/test_config_loader.cpp
     tests/test_waypoint_follower.cpp
+    tests/test_kinematic_sim.cpp
     src/config/ConfigLoader.cpp
+    src/mapping/FakeESDFMap.cpp
+    src/sim_impl/KinematicSim.cpp
     src/sim_impl/WaypointFollower.cpp
 )
 

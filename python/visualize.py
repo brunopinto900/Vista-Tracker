@@ -179,20 +179,23 @@ ax_vel.set_ylim(vel_min - 0.5, vel_max + 0.5)
 # COMMAND VELOCITIES PLOT
 # ============================================================
 
-ax_cmd.set_title("Control Commands")
+ax_cmd.set_title("Control Commands (body rates + thrust)")
 ax_cmd.set_xlabel("Time [s]")
-ax_cmd.set_ylabel("Cmd velocity [m/s]")
+ax_cmd.set_ylabel("Rate [rad/s] / Thrust [–]")
 ax_cmd.grid(True)
 
-cmd_vx_line, = ax_cmd.plot([], [], label="vx_cmd")
-cmd_vy_line, = ax_cmd.plot([], [], label="vy_cmd")
-cmd_vz_line, = ax_cmd.plot([], [], label="vz_cmd")
+cmd_roll_line,  = ax_cmd.plot([], [], label="roll_rate")
+cmd_pitch_line, = ax_cmd.plot([], [], label="pitch_rate")
+cmd_yaw_line,   = ax_cmd.plot([], [], label="yaw_rate")
+cmd_thrust_line,= ax_cmd.plot([], [], label="thrust", linestyle="--")
 
 ax_cmd.legend(fontsize=8)
 ax_cmd.set_xlim(0, tmax)
 
-cmd_min = min(df["vx_cmd"].min(), df["vy_cmd"].min(), df["vz_cmd"].min())
-cmd_max = max(df["vx_cmd"].max(), df["vy_cmd"].max(), df["vz_cmd"].max())
+cmd_min = min(df["roll_rate"].min(), df["pitch_rate"].min(),
+              df["yaw_rate"].min(),   df["thrust"].min())
+cmd_max = max(df["roll_rate"].max(), df["pitch_rate"].max(),
+              df["yaw_rate"].max(),   df["thrust"].max())
 if abs(cmd_max - cmd_min) < 1e-6:
     cmd_min -= 1.0
     cmd_max += 1.0
@@ -212,13 +215,14 @@ def init():
     drone_vy_line.set_data([], [])
     target_vx_line.set_data([], [])
     target_vy_line.set_data([], [])
-    cmd_vx_line.set_data([], [])
-    cmd_vy_line.set_data([], [])
-    cmd_vz_line.set_data([], [])
+    cmd_roll_line.set_data([], [])
+    cmd_pitch_line.set_data([], [])
+    cmd_yaw_line.set_data([], [])
+    cmd_thrust_line.set_data([], [])
     return (drone_path, drone_marker, target_marker, desired_circle,
             error_line,
             drone_vx_line, drone_vy_line, target_vx_line, target_vy_line,
-            cmd_vx_line, cmd_vy_line, cmd_vz_line)
+            cmd_roll_line, cmd_pitch_line, cmd_yaw_line, cmd_thrust_line)
 
 def update(frame):
     sub = df.iloc[:frame + 1]
@@ -246,14 +250,15 @@ def update(frame):
     target_vy_line.set_data(sub["t"], sub["target_vy"])
 
     # Commands
-    cmd_vx_line.set_data(sub["t"], sub["vx_cmd"])
-    cmd_vy_line.set_data(sub["t"], sub["vy_cmd"])
-    cmd_vz_line.set_data(sub["t"], sub["vz_cmd"])
+    cmd_roll_line.set_data(sub["t"],  sub["roll_rate"])
+    cmd_pitch_line.set_data(sub["t"], sub["pitch_rate"])
+    cmd_yaw_line.set_data(sub["t"],   sub["yaw_rate"])
+    cmd_thrust_line.set_data(sub["t"], sub["thrust"])
 
     return (drone_path, drone_marker, target_marker, desired_circle,
             error_line,
             drone_vx_line, drone_vy_line, target_vx_line, target_vy_line,
-            cmd_vx_line, cmd_vy_line, cmd_vz_line)
+            cmd_roll_line, cmd_pitch_line, cmd_yaw_line, cmd_thrust_line)
 
 ani = FuncAnimation(
     fig,
