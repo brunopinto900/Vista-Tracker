@@ -12,9 +12,11 @@ sim:
   T: 20.0
 
 controller:
-  kp: 0.6
-  ki: 0.05
-  kd: 0.15
+  kp:               6.0    # ITAE+smoothing-optimised for sinusoidal tracking
+  ki:               0.0
+  kd:               3.0
+  desired_distance: 4.0
+  attitude_kp:      20.0    # inner loop gain (rad/s per rad); smoothing pulled this down from 16.5
 
 target_trajectory:
   type: person
