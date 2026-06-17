@@ -14,8 +14,8 @@ estimator:
   motion_model: CV      # CV | CTRV | CA
 
 controller:
-  kp:               5.195  # ITAE-optimised for wn=25 zeta=0.7 plant
+  kp:               6.0    # ITAE+smoothing-optimised for sinusoidal tracking
   ki:               0.0
-  kd:               3.000
+  kd:               3.0
   desired_distance: 4.0
-  attitude_kp:      16.557  # inner loop gain (rad/s per rad)
+  attitude_kp:      8.7    # inner loop gain (rad/s per rad); smoothing pulled this down from 16.5

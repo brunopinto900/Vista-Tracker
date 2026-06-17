@@ -3,8 +3,12 @@
 Cascade PID tuner for Vista-Tracker.
 
 Simulates the full cascade controller + second-order quadrotor dynamics,
-optimises gains via ITAE (Integral Time Absolute Error) on a position step,
-and prints the recommended YAML values.
+optimises gains via ITAE (Integral Time Absolute Error) on a sinusoidal
+tracking trajectory, plus a control-effort smoothing penalty.
+
+Cost = ITAE(position error) + SMOOTHING * integral(pitch_rate_cmd²)
+
+Increase SMOOTHING to trade tracking tightness for softer commands.
 
 Model:
   Outer loop : position PID  →  desired acceleration
@@ -34,18 +38,28 @@ WN   = 25.0   # natural frequency  (rad/s)
 ZETA =  0.7   # damping ratio      (–)
 
 # ── Simulation ────────────────────────────────────────────────────────────────
-DT   = 0.02   # outer-loop timestep (s)  — matches sim.dt in config
-T    = 8.0    # total time (s)
-N    = int(T / DT)
+DT       = 0.05    # outer-loop (PID) timestep (s) — matches sim.dt in config
+N_INNER  = 50      # inner sub-steps for 2nd-order dynamics
+DT_INNER = DT / N_INNER   # = 0.001 s  → wn·dt_inner = 0.025, well inside Euler stability
+T        = 8.0    # total time (s)
+N        = int(T / DT)
 
 MAX_ANGLE  = 0.5   # rad  (~28°) tilt limit
 MAX_THRUST = 2.0   # normalised
 
+# ── Tracking reference (sinusoidal — representative of a moving target) ───────
+REF_AMP   = 3.0   # m      amplitude
+REF_OMEGA = 0.6   # rad/s  angular frequency  (period ≈ 10 s)
 
-def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+# ── Smoothing weight  (increase to trade tracking error for softer commands) ──
+SMOOTHING = 0.10  # multiplied by integral(pitch_rate_cmd²)
+
+
+def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Simulate the cascade system for a step reference in x.
-    Returns (t, x_log, ref_log) arrays.
+    Simulate the cascade system tracking a sinusoidal reference in x.
+    Returns (t, x_log, ref_log, wy_cmd_log) arrays.
+    wy_cmd_log is the pitch-rate command — proxy for control effort.
     """
     kp, ki, kd, att_kp = gains
 
@@ -69,20 +83,22 @@ def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     two_zeta_wn = 2.0 * ZETA * WN
 
     def step2(cmd, val, dval):
-        ddval = wn2 * (cmd - val) - two_zeta_wn * dval
-        dval += ddval * DT
-        val  += dval  * DT
+        for _ in range(N_INNER):
+            ddval = wn2 * (cmd - val) - two_zeta_wn * dval
+            dval += ddval * DT_INNER
+            val  += dval  * DT_INNER
         return val, dval
 
-    t_log   = np.zeros(N)
-    x_log   = np.zeros(N)
-    ref_log = np.zeros(N)
+    t_log      = np.zeros(N)
+    x_log      = np.zeros(N)
+    ref_log    = np.zeros(N)
+    wy_cmd_log = np.zeros(N)
 
     for i in range(N):
         t = i * DT
 
-        # Step reference: move to x=5 m at t=0.5 s, hold
-        ref_x = 5.0 if t >= 0.5 else 0.0
+        # Sinusoidal tracking reference (moving target)
+        ref_x = REF_AMP * np.sin(REF_OMEGA * t)
         ref_y = 0.0
         ref_z = 2.0
 
@@ -137,20 +153,28 @@ def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         vy += ay * DT;  y += vy * DT
         vz += az * DT;  z += vz * DT
 
-        t_log[i]   = t
-        x_log[i]   = x
-        ref_log[i] = ref_x
+        t_log[i]      = t
+        x_log[i]      = x
+        ref_log[i]    = ref_x
+        wy_cmd_log[i] = pitch_rate_cmd
 
-    return t_log, x_log, ref_log
+    return t_log, x_log, ref_log, wy_cmd_log
 
 
 def itae_cost(gains: np.ndarray) -> float:
-    """ITAE on x-position error (penalises late errors more)."""
-    if np.any(gains <= 0):
+    """ITAE tracking error + control-effort smoothing penalty.
+
+    cost = integral(t * |e|) + SMOOTHING * integral(pitch_rate_cmd²)
+
+    The smoothing term penalises large body-rate commands, biasing the
+    optimiser toward gains that track without aggressive attitude swings.
+    """
+    if gains[0] <= 0 or gains[3] <= 0:  # kp and attitude_kp must be positive
         return 1e9
-    t, x, ref = simulate(gains)
-    error = np.abs(x - ref)
-    return float(np.trapz(t * error, t))
+    t, x, ref, wy_cmd = simulate(gains)
+    itae   = float(np.trapz(t * np.abs(x - ref), t))
+    effort = float(np.trapz(wy_cmd ** 2, t))
+    return itae + SMOOTHING * effort
 
 
 def main():
@@ -159,9 +183,9 @@ def main():
     args = parser.parse_args()
 
     # ── Optimise ──────────────────────────────────────────────────────────────
-    x0     = np.array([1.0, 0.2, 0.3, 8.0])   # kp, ki, kd, attitude_kp
+    x0     = np.array([2.0, 0.1, 0.5, 8.0])   # kp, ki, kd, attitude_kp
     bounds = Bounds(lb=[0.1, 0.0, 0.0, 1.0],
-                    ub=[6.0, 2.0, 3.0, 20.0])
+                    ub=[15.0, 2.0, 5.0, 25.0])
 
     print("Optimising PID gains (ITAE criterion) …")
     result = minimize(itae_cost, x0, method="L-BFGS-B", bounds=bounds,
@@ -182,24 +206,35 @@ def main():
     print(f"  attitude_kp: {att_kp:.3f}")
 
     if not args.no_plot:
-        t0, x0_sim, ref0 = simulate(np.array([1.0, 0.2, 0.3, 8.0]))  # initial
-        t1, x1_sim, ref1 = simulate(result.x)                          # optimised
+        t0, x0_sim, ref0, wy0 = simulate(np.array([1.0, 0.2, 0.3, 8.0]))  # initial
+        t1, x1_sim, ref1, wy1 = simulate(result.x)                          # optimised
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        fig, axes = plt.subplots(2, 2, figsize=(13, 7))
 
-        for ax, t, xs, label in [
-            (axes[0], t0, x0_sim, "Initial gains"),
-            (axes[1], t1, x1_sim, f"Optimised (ITAE={result.fun:.3f})"),
-        ]:
-            ax.plot(t, ref1, "k--", linewidth=1, label="Reference")
-            ax.plot(t, xs,   "b-",  linewidth=1.5, label=label)
-            ax.set_xlabel("Time [s]")
-            ax.set_ylabel("x [m]")
-            ax.set_title(label)
-            ax.legend(fontsize=8)
-            ax.grid(True)
+        for col, (t, xs, wy, ref, label) in enumerate([
+            (t0, x0_sim, wy0, ref0, "Initial gains"),
+            (t1, x1_sim, wy1, ref1, f"Optimised (cost={result.fun:.3f})"),
+        ]):
+            ax_pos = axes[0, col]
+            ax_pos.plot(t, ref,  "k--", linewidth=1,   label="Reference")
+            ax_pos.plot(t, xs,   "b-",  linewidth=1.5, label=label)
+            ax_pos.set_ylabel("x [m]")
+            ax_pos.set_title(label)
+            ax_pos.legend(fontsize=8)
+            ax_pos.grid(True)
 
-        plt.suptitle(f"Position step response  |  wn={WN} rad/s  zeta={ZETA}")
+            ax_cmd = axes[1, col]
+            ax_cmd.plot(t, wy, "r-", linewidth=1.2)
+            ax_cmd.set_xlabel("Time [s]")
+            ax_cmd.set_ylabel("pitch_rate_cmd [rad/s]")
+            ax_cmd.set_title("Control effort")
+            ax_cmd.grid(True)
+
+        plt.suptitle(
+            f"Tracking  |  wn={WN} rad/s  zeta={ZETA}"
+            f"  |  smoothing={SMOOTHING}"
+            f"  |  ref: {REF_AMP}m @ {REF_OMEGA:.2f} rad/s"
+        )
         plt.tight_layout()
         plt.show()
 

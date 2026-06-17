@@ -27,19 +27,22 @@ KinematicSim::KinematicSim(const State&            drone,
 void KinematicSim::update(const ControlCommand& cmd, double dt)
 {
     // ── Second-order body-rate dynamics ───────────────────────────────────────
-    // Models the PX4 inner rate-controller response as a second-order system:
-    //   ẅ + 2·ζ·wn·ẇ + wn²·w = wn²·w_cmd
+    // W(s)/W_cmd(s) = wn² / (s²+2ζwn·s+wn²)
     //
-    // Equivalent transfer function: W(s)/W_cmd(s) = wn² / (s²+2ζwn·s+wn²)
-    //
-    // Typical small quad: wn=25 rad/s, zeta=0.7 → 4.3% overshoot, ts≈330 ms.
-    const double wn2        = wn_ * wn_;
-    const double two_zeta_wn = 2.0 * zeta_ * wn_;
+    // Explicit Euler requires wn·dt << 1 for stability.  At the outer-loop
+    // timestep (dt=0.05 s) with wn=25 rad/s, wn·dt=1.25 — past the stability
+    // boundary.  We sub-step at dt_inner = dt/N_INNER so wn·dt_inner = 0.025.
+    static constexpr int kInnerSteps = 50;
+    const double dt_inner     = dt / kInnerSteps;
+    const double wn2          = wn_ * wn_;
+    const double two_zeta_wn  = 2.0 * zeta_ * wn_;
 
     auto step2 = [&](double w_cmd, double& w, double& w_dot) {
-        double w_ddot = wn2 * (w_cmd - w) - two_zeta_wn * w_dot;
-        w_dot += w_ddot * dt;
-        w     += w_dot  * dt;
+        for (int i = 0; i < kInnerSteps; ++i) {
+            const double w_ddot = wn2 * (w_cmd - w) - two_zeta_wn * w_dot;
+            w_dot += w_ddot * dt_inner;
+            w     += w_dot  * dt_inner;
+        }
     };
 
     step2(cmd.roll_rate,  drone_.wx, wx_dot_);
