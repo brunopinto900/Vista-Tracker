@@ -12,7 +12,10 @@ struct EstimatorConfig
 
 struct DroneConfig
 {
-    double tau = 0.02;  // body-rate actuator lag (s) — PX4 inner-loop typically 15–30 ms
+    // Second-order body-rate response: models PX4 rate controller dynamics.
+    // Typical small quad: wn ≈ 25 rad/s, zeta ≈ 0.7 (4.3 % overshoot).
+    double wn   = 25.0;  // natural frequency (rad/s)
+    double zeta = 0.7;   // damping ratio
 };
 
 struct ControllerConfig

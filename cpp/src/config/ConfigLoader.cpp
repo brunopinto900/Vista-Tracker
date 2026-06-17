@@ -39,7 +39,8 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
 
     if (auto s = n["drone"])
     {
-        if (s["tau"]) cfg.drone.tau = s["tau"].as<double>();
+        if (s["wn"])   cfg.drone.wn   = s["wn"].as<double>();
+        if (s["zeta"]) cfg.drone.zeta = s["zeta"].as<double>();
     }
 
     if (auto s = n["sim"])

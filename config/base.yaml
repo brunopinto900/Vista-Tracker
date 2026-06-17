@@ -3,7 +3,8 @@
 # World, drone_init, target_trajectory, and sim.T live in the scenario.
 
 drone:
-  tau: 0.02             # body-rate actuator lag (s) — PX4 inner-loop typically 15–30 ms
+  wn:   25.0            # body-rate natural frequency (rad/s) — typical small quad
+  zeta:  0.7            # damping ratio (0.7 → 4.3 % overshoot, settles in ~330 ms)
 
 sim:
   dt: 0.05              # timestep — same for all scenarios
@@ -13,8 +14,8 @@ estimator:
   motion_model: CV      # CV | CTRV | CA
 
 controller:
-  kp:               1.0
-  ki:               0.2
-  kd:               0.2
+  kp:               5.195  # ITAE-optimised for wn=25 zeta=0.7 plant
+  ki:               0.0
+  kd:               3.000
   desired_distance: 4.0
-  attitude_kp:      5.0  # inner loop gain (rad/s per rad)
+  attitude_kp:      16.557  # inner loop gain (rad/s per rad)

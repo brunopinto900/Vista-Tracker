@@ -7,12 +7,13 @@
 class KinematicSim : public ISimulator
 {
 public:
-    // tau: first-order lag time constant (s) for body-rate + thrust channels,
-    //      modelling the PX4 inner-loop response delay.
+    // wn   : natural frequency (rad/s) of the second-order body-rate response
+    // zeta : damping ratio (0.7 → slight overshoot; 1.0 → critically damped)
     KinematicSim(const State&            drone,
                  const TargetTrajectory& traj,
                  const World&            world,
-                 double                  tau = 0.1);
+                 double                  wn   = 25.0,
+                 double                  zeta = 0.7);
 
     void update(const ControlCommand& cmd, double dt) override;
 
@@ -22,8 +23,13 @@ public:
 
 private:
     State            drone_;
-    double           thrust_actual_ = 1.0;  // lagged thrust, initialised at hover
-    double           tau_;
+    double           thrust_actual_ = 1.0;  // initialised at hover
+    double           thrust_dot_    = 0.0;
+    double           wx_dot_        = 0.0;  // body-rate derivatives for 2nd-order ODE
+    double           wy_dot_        = 0.0;
+    double           wz_dot_        = 0.0;
+    double           wn_;
+    double           zeta_;
     TargetState      target_;
     World            world_;
     WaypointFollower follower_;
