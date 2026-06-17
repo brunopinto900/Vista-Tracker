@@ -12,7 +12,7 @@ struct EstimatorConfig
 
 struct DroneConfig
 {
-    double tau = 0.1;   // body-rate actuator lag (s) — models PX4 inner-loop response
+    double tau = 0.02;  // body-rate actuator lag (s) — PX4 inner-loop typically 15–30 ms
 };
 
 struct ControllerConfig

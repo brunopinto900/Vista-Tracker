@@ -3,7 +3,7 @@
 # Used by ./tracker with no arguments.
 
 drone:
-  tau: 0.1
+  tau: 0.02
 
 drone_init:
   x: -8.0
