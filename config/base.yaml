@@ -11,6 +11,9 @@ drone:
 sim:
   dt: 0.05              # timestep — same for all scenarios
 
+camera:
+  fov: 40.0              # horizontal field of view (degrees)
+
 estimator:
   horizon:      10
   motion_model: CV      # CV | CTRV | CA

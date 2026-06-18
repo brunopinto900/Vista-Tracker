@@ -103,6 +103,7 @@ int main(int argc, char* argv[])
          << "drone_x,drone_y,drone_z,"
          << "drone_vx,drone_vy,drone_vz,"
          << "drone_roll,drone_pitch,drone_yaw,"
+         << "drone_wx,drone_wy,drone_wz,"
          << "target_vx,target_vy,target_vz,"
          << "roll_rate,pitch_rate,yaw_rate,thrust\n";
 
@@ -119,12 +120,13 @@ int main(int argc, char* argv[])
         sim.update(cmd, cfg.sim.dt);
 
         file << t              << ","
-             << tr.x           << "," << tr.y        << "," << tr.z        << ","
-             << d.x            << "," << d.y         << "," << d.z         << ","
-             << d.vx           << "," << d.vy        << "," << d.vz        << ","
-             << d.roll         << "," << d.pitch      << "," << d.yaw       << ","
-             << tr.vx          << "," << tr.vy        << "," << tr.vz       << ","
-             << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate << ","
+             << tr.x           << "," << tr.y          << "," << tr.z          << ","
+             << d.x            << "," << d.y           << "," << d.z           << ","
+             << d.vx           << "," << d.vy          << "," << d.vz          << ","
+             << d.roll         << "," << d.pitch        << "," << d.yaw         << ","
+             << d.wx           << "," << d.wy          << "," << d.wz          << ","
+             << tr.vx          << "," << tr.vy          << "," << tr.vz         << ","
+             << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate  << ","
              << cmd.thrust
              << "\n";
     }
