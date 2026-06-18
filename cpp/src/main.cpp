@@ -93,7 +93,8 @@ int main(int argc, char* argv[])
     PIDController         controller(cfg.controller.kp,
                                      cfg.controller.ki,
                                      cfg.controller.kd,
-                                     cfg.controller.attitude_kp);
+                                     cfg.controller.attitude_kp,
+                                     cfg.controller.yaw_kp);
 
     std::ofstream file("../../data/log.csv");
 

@@ -9,8 +9,9 @@
 class PIDController : public IController
 {
 public:
-    // attitude_kp: inner-loop proportional gain (rad/s per rad of attitude error)
-    PIDController(double kp, double ki, double kd, double attitude_kp = 5.0);
+    PIDController(double kp, double ki, double kd,
+                  double attitude_kp = 5.0,
+                  double yaw_kp      = 0.3);
 
     ControlCommand update(
         const State&     drone,
@@ -22,4 +23,5 @@ private:
     PID    pid_y_;
     PID    pid_z_;
     double attitude_kp_;
+    double yaw_kp_;
 };
