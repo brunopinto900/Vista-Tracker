@@ -61,8 +61,9 @@ obstacles        = cfg.get("world", {}).get("obstacles", [])
 grid             = cfg.get("world", {}).get("grid", {})
 DESIRED_DISTANCE = cfg["controller"]["desired_distance"]
 ATT_KP           = cfg["controller"]["attitude_kp"]
-FOV_DEG          = cfg.get("camera", {}).get("fov", 40.0)
+FOV_DEG          = cfg.get("camera", {}).get("fov", 360.0)
 HALF_FOV         = np.radians(FOV_DEG / 2.0)
+CAMERA_RANGE     = cfg.get("camera", {}).get("range", 6.0)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -130,13 +131,25 @@ ax_traj.set_xlim(GRID_X_MIN, GRID_X_MAX)
 ax_traj.set_ylim(GRID_Y_MIN, GRID_Y_MAX)
 ax_traj.set_aspect("equal"); ax_traj.grid(True, zorder=0)
 
-for obs in obstacles:
+# Sensing range circle — animated, drawn below obstacles
+sensing_circle = patches.Circle(
+    (df["drone_x"].iloc[0], df["drone_y"].iloc[0]), CAMERA_RANGE,
+    facecolor="lightgreen", alpha=0.18, edgecolor="green",
+    linewidth=1, linestyle="--", zorder=1, animated=True,
+    label=f"Camera {CAMERA_RANGE:.0f}m range")
+ax_traj.add_patch(sensing_circle)
+
+# Obstacles start grey (unknown); coloured when inside camera range
+obs_patches = []
+for i, obs in enumerate(obstacles):
     ox, oy, sz = obs["x"], obs["y"], obs["size"]
-    ax_traj.add_patch(patches.Rectangle(
+    p = patches.Rectangle(
         (ox - sz, oy - sz), 2*sz, 2*sz,
-        linewidth=1.5, edgecolor="#8B0000", facecolor="#FF6B6B",
-        alpha=0.7, zorder=2,
-        label="Obstacle" if obs is obstacles[0] else "_nolegend_"))
+        linewidth=1.5, edgecolor="#888888", facecolor="#CCCCCC",
+        alpha=0.5, zorder=2, animated=True,
+        label="Obstacle" if i == 0 else "_nolegend_")
+    ax_traj.add_patch(p)
+    obs_patches.append(p)
 
 ax_traj.plot(df["target_x"], df["target_y"],
              "g--", linewidth=1, label="Target path", zorder=3)
@@ -258,17 +271,19 @@ ax_other.set_title("Reserved")
 
 # ── Animation ─────────────────────────────────────────────────────────────────
 
-_animated = (drone_path, drone_marker, target_marker, desired_circle,
-             error_line,
-             yaw_line,
-             wx_line, wy_line, wz_line,
-             drone_vx_line, drone_vy_line,
-             roll_line, pitch_line,
-             yaw_arrow)
+_anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
+               error_line,
+               yaw_line,
+               wx_line, wy_line, wz_line,
+               drone_vx_line, drone_vy_line,
+               roll_line, pitch_line)
+
+_anim_patches = tuple(obs_patches) + (sensing_circle,)
+_animated     = _anim_lines + _anim_patches + (yaw_arrow,)
 
 def init():
-    for artist in _animated[:-1]:   # all except quiver (no set_data)
-        artist.set_data([], [])
+    for line in _anim_lines:
+        line.set_data([], [])
     yaw_arrow.set_UVC(0, 0)
     return _animated
 
@@ -289,6 +304,17 @@ def update(frame):
         sub["target_y"].iloc[-1] + DESIRED_DISTANCE * np.sin(theta))
     yaw_arrow.set_offsets([[dx, dy]])
     yaw_arrow.set_UVC(ARROW_LEN * np.cos(yaw), ARROW_LEN * np.sin(yaw))
+
+    # Camera sensing range circle
+    sensing_circle.set_center((dx, dy))
+
+    # Obstacles: coloured when within camera range, grey otherwise
+    for patch, obs in zip(obs_patches, obstacles):
+        dist = np.hypot(dx - obs["x"], dy - obs["y"])
+        if dist <= CAMERA_RANGE:
+            patch.set_facecolor("#FF6B6B"); patch.set_edgecolor("#8B0000"); patch.set_alpha(0.7)
+        else:
+            patch.set_facecolor("#CCCCCC"); patch.set_edgecolor("#888888"); patch.set_alpha(0.5)
 
     # (0,1) Error
     error_line.set_data(t, sub["distance_error"])

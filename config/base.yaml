@@ -12,7 +12,8 @@ sim:
   dt: 0.05              # timestep — same for all scenarios
 
 camera:
-  fov: 40.0              # horizontal field of view (degrees)
+  fov:   360.0           # horizontal field of view (degrees) — omnidirectional
+  range:   6.0           # sensing/detection range (metres)
 
 estimator:
   horizon:      10
