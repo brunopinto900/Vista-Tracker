@@ -3,8 +3,10 @@
 # World, drone_init, target_trajectory, and sim.T live in the scenario.
 
 drone:
-  wn:   25.0            # body-rate natural frequency (rad/s) — typical small quad
-  zeta:  0.7            # damping ratio (0.7 → 4.3 % overshoot, settles in ~330 ms)
+  wn:       25.0   # roll/pitch natural frequency (rad/s) — differential thrust
+  zeta:      0.7   # damping ratio (0.7 → 4.3 % overshoot, settles in ~330 ms)
+  wn_yaw:    4.0   # yaw natural frequency (rad/s) — reaction torque limited (τ≈250 ms)
+  zeta_yaw:  0.7
 
 sim:
   dt: 0.05              # timestep — same for all scenarios

@@ -7,13 +7,13 @@
 class KinematicSim : public ISimulator
 {
 public:
-    // wn   : natural frequency (rad/s) of the second-order body-rate response
-    // zeta : damping ratio (0.7 → slight overshoot; 1.0 → critically damped)
     KinematicSim(const State&            drone,
                  const TargetTrajectory& traj,
                  const World&            world,
-                 double                  wn   = 25.0,
-                 double                  zeta = 0.7);
+                 double                  wn       = 25.0,  // roll/pitch bandwidth (rad/s)
+                 double                  zeta     = 0.7,
+                 double                  wn_yaw   = 4.0,   // yaw bandwidth — reaction torque limited
+                 double                  zeta_yaw = 0.7);
 
     void update(const ControlCommand& cmd, double dt) override;
 
@@ -30,6 +30,8 @@ private:
     double           wz_dot_        = 0.0;
     double           wn_;
     double           zeta_;
+    double           wn_yaw_;
+    double           zeta_yaw_;
     TargetState      target_;
     World            world_;
     WaypointFollower follower_;

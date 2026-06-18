@@ -83,7 +83,9 @@ int main(int argc, char* argv[])
     drone.y = cfg.drone_init.y;
     drone.z = cfg.drone_init.z;
 
-    KinematicSim          sim(drone, cfg.trajectory, cfg.world, cfg.drone.wn, cfg.drone.zeta);
+    KinematicSim          sim(drone, cfg.trajectory, cfg.world,
+                              cfg.drone.wn, cfg.drone.zeta,
+                              cfg.drone.wn_yaw, cfg.drone.zeta_yaw);
     GroundTruthPerception perception(sim);
     PerfectEstimator      estimator(cfg.estimator.horizon);
     FakeESDFMap           esdf(cfg.world);

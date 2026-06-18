@@ -12,10 +12,12 @@ struct EstimatorConfig
 
 struct DroneConfig
 {
-    // Second-order body-rate response: models PX4 rate controller dynamics.
-    // Typical small quad: wn ≈ 25 rad/s, zeta ≈ 0.7 (4.3 % overshoot).
+    // Roll/pitch: differential thrust — high authority
     double wn   = 25.0;  // natural frequency (rad/s)
     double zeta = 0.7;   // damping ratio
+    // Yaw: reaction torque imbalance — much lower authority (~6× slower)
+    double wn_yaw   = 4.0;
+    double zeta_yaw = 0.7;
 };
 
 struct ControllerConfig
@@ -24,7 +26,8 @@ struct ControllerConfig
     double ki               = 0.0;
     double kd               = 0.0;
     double desired_distance = 4.0;
-    double attitude_kp      = 5.0;  // inner loop: (rad/s) per rad of attitude error
+    double attitude_kp      = 5.0;  // roll/pitch inner loop (rad/s per rad)
+    double yaw_kp           = 0.3;  // yaw inner loop (rad/s per rad) — slower plant
 };
 
 struct Config

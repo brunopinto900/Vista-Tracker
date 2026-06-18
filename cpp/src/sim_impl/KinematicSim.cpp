@@ -8,10 +8,14 @@ KinematicSim::KinematicSim(const State&            drone,
                              const TargetTrajectory& traj,
                              const World&            world,
                              double                  wn,
-                             double                  zeta)
+                             double                  zeta,
+                             double                  wn_yaw,
+                             double                  zeta_yaw)
     : drone_(drone)
     , wn_(wn)
     , zeta_(zeta)
+    , wn_yaw_(wn_yaw)
+    , zeta_yaw_(zeta_yaw)
     , world_(world)
     , follower_(traj, [&] {
         TargetState t;
@@ -27,28 +31,39 @@ KinematicSim::KinematicSim(const State&            drone,
 void KinematicSim::update(const ControlCommand& cmd, double dt)
 {
     // ── Second-order body-rate dynamics ───────────────────────────────────────
-    // W(s)/W_cmd(s) = wn² / (s²+2ζwn·s+wn²)
-    //
-    // Explicit Euler requires wn·dt << 1 for stability.  At the outer-loop
-    // timestep (dt=0.05 s) with wn=25 rad/s, wn·dt=1.25 — past the stability
-    // boundary.  We sub-step at dt_inner = dt/N_INNER so wn·dt_inner = 0.025.
+    // Roll/pitch: differential thrust — wn=25 rad/s, wn·dt=1.25 > stability
+    // boundary, so we sub-step at dt_inner = dt/50 (wn·dt_inner = 0.025).
+    // Yaw: reaction torque — wn=4 rad/s, wn·dt=0.2, within stability boundary
+    // but sub-stepped at the same rate for consistency.
     static constexpr int kInnerSteps = 50;
-    const double dt_inner     = dt / kInnerSteps;
-    const double wn2          = wn_ * wn_;
-    const double two_zeta_wn  = 2.0 * zeta_ * wn_;
+    const double dt_inner = dt / kInnerSteps;
 
-    auto step2 = [&](double w_cmd, double& w, double& w_dot) {
+    const double wn2_rp  = wn_ * wn_;
+    const double damp_rp = 2.0 * zeta_ * wn_;
+
+    const double wn2_yaw  = wn_yaw_ * wn_yaw_;
+    const double damp_yaw = 2.0 * zeta_yaw_ * wn_yaw_;
+
+    auto step2_rp = [&](double w_cmd, double& w, double& w_dot) {
         for (int i = 0; i < kInnerSteps; ++i) {
-            const double w_ddot = wn2 * (w_cmd - w) - two_zeta_wn * w_dot;
+            const double w_ddot = wn2_rp * (w_cmd - w) - damp_rp * w_dot;
             w_dot += w_ddot * dt_inner;
             w     += w_dot  * dt_inner;
         }
     };
 
-    step2(cmd.roll_rate,  drone_.wx, wx_dot_);
-    step2(cmd.pitch_rate, drone_.wy, wy_dot_);
-    step2(cmd.yaw_rate,   drone_.wz, wz_dot_);
-    step2(cmd.thrust,     thrust_actual_, thrust_dot_);
+    auto step2_yaw = [&](double w_cmd, double& w, double& w_dot) {
+        for (int i = 0; i < kInnerSteps; ++i) {
+            const double w_ddot = wn2_yaw * (w_cmd - w) - damp_yaw * w_dot;
+            w_dot += w_ddot * dt_inner;
+            w     += w_dot  * dt_inner;
+        }
+    };
+
+    step2_rp(cmd.roll_rate,  drone_.wx,       wx_dot_);
+    step2_rp(cmd.pitch_rate, drone_.wy,       wy_dot_);
+    step2_yaw(cmd.yaw_rate,  drone_.wz,       wz_dot_);
+    step2_rp(cmd.thrust,     thrust_actual_,  thrust_dot_);
 
     // ── Attitude integration (ZYX Euler) ──────────────────────────────────────
     drone_.roll  += drone_.wx * dt;
