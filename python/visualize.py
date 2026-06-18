@@ -82,8 +82,10 @@ df["distance_error"] = df["distance"] - DESIRED_DISTANCE
 df["ref_yaw"] = np.arctan2(df["target_y"] - df["drone_y"],
                             df["target_x"] - df["drone_x"])
 
-# Normalise drone yaw to [-π, π]
-df["drone_yaw_n"] = (df["drone_yaw"] + np.pi) % (2.0 * np.pi) - np.pi
+# Heading error: signed angle from ref to drone yaw, wrapped to [-π, π]
+df["yaw_error"] = np.arctan2(
+    np.sin(df["drone_yaw"] - df["ref_yaw"]),
+    np.cos(df["drone_yaw"] - df["ref_yaw"]))
 
 # Attitude setpoints back-computed from inner-loop: rate = att_kp*(des - state)
 df["roll_des"]  = df["drone_roll"]  + df["roll_rate"]  / ATT_KP
@@ -144,13 +146,13 @@ drone_marker,   = ax_traj.plot([], [], "bo",  markersize=8,  zorder=5)
 target_marker,  = ax_traj.plot([], [], "g^",  markersize=8,  label="Target", zorder=5)
 desired_circle, = ax_traj.plot([], [], "b--", linewidth=1,   label=f"d={DESIRED_DISTANCE}m", zorder=4)
 
-ARROW_LEN = 1.5  # heading arrow length (metres)
+ARROW_LEN = 3.0  # heading arrow length (metres)
 yaw_arrow = ax_traj.quiver(
     df["drone_x"].iloc[0], df["drone_y"].iloc[0],
     ARROW_LEN * np.cos(df["drone_yaw"].iloc[0]),
     ARROW_LEN * np.sin(df["drone_yaw"].iloc[0]),
     angles="xy", scale_units="xy", scale=1,
-    color="dodgerblue", width=0.012, zorder=6, label="heading")
+    color="dodgerblue", width=0.005, zorder=6, label="heading")
 
 ax_traj.legend(loc="upper left", fontsize=8)
 
@@ -165,29 +167,23 @@ ax_err.grid(True)
 
 error_line, = ax_err.plot([], [], "r-", linewidth=1.5)
 
-# ── Panel (1,0): Yaw ──────────────────────────────────────────────────────────
+# ── Panel (1,0): Yaw heading error ───────────────────────────────────────────
 
-ax_yaw.set_title(f"Yaw  (camera FoV = {FOV_DEG:.0f}°, half = {FOV_DEG/2:.0f}°)")
-ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Angle [rad]")
+ax_yaw.set_title(f"Heading Error  (FoV = {FOV_DEG:.0f}°, target in FoV if |error| < {FOV_DEG/2:.0f}°)")
+ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Heading error [rad]")
 ax_yaw.set_xlim(0, tmax)
-
-yaw_lo, yaw_hi = _ylim(df["drone_yaw_n"], df["ref_yaw"],
-                        df["ref_yaw"] + HALF_FOV, df["ref_yaw"] - HALF_FOV)
-ax_yaw.set_ylim(yaw_lo, yaw_hi)
+ax_yaw.set_ylim(*_ylim(df["yaw_error"], pad=HALF_FOV + 0.1))
 ax_yaw.grid(True)
 
-# Static reference and FoV band (fully pre-plotted)
-ax_yaw.plot(df["t"], df["ref_yaw"], color="orange", linewidth=1,
-            linestyle="--", label="ref yaw", zorder=3)
-ax_yaw.fill_between(df["t"],
-                    df["ref_yaw"] - HALF_FOV, df["ref_yaw"] + HALF_FOV,
-                    color="green", alpha=0.12, zorder=2)
-ax_yaw.plot(df["t"], df["ref_yaw"] + HALF_FOV,
-            "g-", linewidth=1.0, label=f"±{FOV_DEG/2:.0f}° FoV", zorder=3)
-ax_yaw.plot(df["t"], df["ref_yaw"] - HALF_FOV,
-            "g-", linewidth=1.0, zorder=3)
+# Zero reference and ±half-FoV acceptance band (static)
+ax_yaw.axhline(0, color="k", linewidth=0.8, linestyle="--", zorder=2)
+ax_yaw.fill_between([0, tmax], -HALF_FOV, HALF_FOV,
+                    color="green", alpha=0.15, zorder=2)
+ax_yaw.axhline( HALF_FOV, color="green", linewidth=1.2,
+               label=f"±{FOV_DEG/2:.0f}° FoV boundary", zorder=3)
+ax_yaw.axhline(-HALF_FOV, color="green", linewidth=1.2, zorder=3)
 
-yaw_line, = ax_yaw.plot([], [], "b-", linewidth=1.5, label="drone yaw", zorder=4)
+yaw_line, = ax_yaw.plot([], [], "b-", linewidth=1.5, label="heading error", zorder=4)
 ax_yaw.legend(fontsize=8)
 
 # ── Panel (1,1): Body Rates ───────────────────────────────────────────────────
@@ -297,8 +293,8 @@ def update(frame):
     # (0,1) Error
     error_line.set_data(t, sub["distance_error"])
 
-    # (1,0) Yaw
-    yaw_line.set_data(t, sub["drone_yaw_n"])
+    # (1,0) Yaw heading error
+    yaw_line.set_data(t, sub["yaw_error"])
 
     # (1,1) Body rates
     if has_body_rates:
