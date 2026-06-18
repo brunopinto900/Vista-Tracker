@@ -12,11 +12,19 @@ sim:
   T: 20.0
 
 controller:
-  kp:               6.0    # ITAE+smoothing-optimised for sinusoidal tracking
-  ki:               0.0
-  kd:               3.0
+  kp:               8.154  # ITAE+smoothing-optimised for 2-axis sinusoidal tracking
+  ki:               0.267
+  kd:               5.000
   desired_distance: 4.0
-  attitude_kp:      20.0    # inner loop gain (rad/s per rad); smoothing pulled this down from 16.5
+  attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
+  yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
+
+#controller:
+#  kp:               6.0 # 7.818 ITAE+smoothing-optimised for 2-axis sinusoidal tracking
+#  ki:               0.0 # 0.261 ITAE+smoothing-optimised for 2-axis sinusoidal tracking
+#  kd:               3.0 # 5.000 ITAE+smoothing-optimised for 2-axis sinusoidal tracking
+#  desired_distance: 4.0
+#  attitude_kp:      20  # 7.778 inner loop gain (rad/s per rad) optimizer
 
 target_trajectory:
   type: person
