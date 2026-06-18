@@ -143,6 +143,15 @@ drone_path,     = ax_traj.plot([], [], "b-",  linewidth=1.5, label="Drone", zord
 drone_marker,   = ax_traj.plot([], [], "bo",  markersize=8,  zorder=5)
 target_marker,  = ax_traj.plot([], [], "g^",  markersize=8,  label="Target", zorder=5)
 desired_circle, = ax_traj.plot([], [], "b--", linewidth=1,   label=f"d={DESIRED_DISTANCE}m", zorder=4)
+
+ARROW_LEN = 1.5  # heading arrow length (metres)
+yaw_arrow = ax_traj.quiver(
+    df["drone_x"].iloc[0], df["drone_y"].iloc[0],
+    ARROW_LEN * np.cos(df["drone_yaw"].iloc[0]),
+    ARROW_LEN * np.sin(df["drone_yaw"].iloc[0]),
+    angles="xy", scale_units="xy", scale=1,
+    color="dodgerblue", width=0.012, zorder=6, label="heading")
+
 ax_traj.legend(loc="upper left", fontsize=8)
 
 # ── Panel (0,1): Tracking Error ───────────────────────────────────────────────
@@ -258,11 +267,13 @@ _animated = (drone_path, drone_marker, target_marker, desired_circle,
              yaw_line,
              wx_line, wy_line, wz_line,
              drone_vx_line, drone_vy_line,
-             roll_line, pitch_line)
+             roll_line, pitch_line,
+             yaw_arrow)
 
 def init():
-    for artist in _animated:
+    for artist in _animated[:-1]:   # all except quiver (no set_data)
         artist.set_data([], [])
+    yaw_arrow.set_UVC(0, 0)
     return _animated
 
 def update(frame):
@@ -270,13 +281,18 @@ def update(frame):
     t   = sub["t"]
 
     # (0,0) Trajectory
+    dx = sub["drone_x"].iloc[-1]
+    dy = sub["drone_y"].iloc[-1]
+    yaw = sub["drone_yaw"].iloc[-1]
     drone_path.set_data(sub["drone_x"], sub["drone_y"])
-    drone_marker.set_data([sub["drone_x"].iloc[-1]], [sub["drone_y"].iloc[-1]])
+    drone_marker.set_data([dx], [dy])
     target_marker.set_data([sub["target_x"].iloc[-1]], [sub["target_y"].iloc[-1]])
     theta = np.linspace(0, 2*np.pi, 120)
     desired_circle.set_data(
         sub["target_x"].iloc[-1] + DESIRED_DISTANCE * np.cos(theta),
         sub["target_y"].iloc[-1] + DESIRED_DISTANCE * np.sin(theta))
+    yaw_arrow.set_offsets([[dx, dy]])
+    yaw_arrow.set_UVC(ARROW_LEN * np.cos(yaw), ARROW_LEN * np.sin(yaw))
 
     # (0,1) Error
     error_line.set_data(t, sub["distance_error"])
