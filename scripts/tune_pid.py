@@ -6,7 +6,7 @@ Simulates the full cascade controller + second-order quadrotor dynamics,
 optimises gains via ITAE (Integral Time Absolute Error) on a sinusoidal
 tracking trajectory, plus a control-effort smoothing penalty.
 
-Cost = ITAE(position error) + SMOOTHING * integral(pitch_rate_cmd²)
+Cost = ITAE(x error + y error) + SMOOTHING * integral(wx_cmd² + wy_cmd²)
 
 Increase SMOOTHING to trade tracking tightness for softer commands.
 
@@ -52,14 +52,15 @@ REF_AMP   = 3.0   # m      amplitude
 REF_OMEGA = 0.6   # rad/s  angular frequency  (period ≈ 10 s)
 
 # ── Smoothing weight  (increase to trade tracking error for softer commands) ──
-SMOOTHING = 0.10  # multiplied by integral(pitch_rate_cmd²)
+SMOOTHING = 0.10  # multiplied by integral(wx_cmd² + wy_cmd²) — both axes
 
 
-def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray,
+                                          np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Simulate the cascade system tracking a sinusoidal reference in x.
-    Returns (t, x_log, ref_log, wy_cmd_log) arrays.
-    wy_cmd_log is the pitch-rate command — proxy for control effort.
+    Simulate the cascade system tracking sinusoidal references in x and y.
+    Returns (t, x_log, y_log, ref_x_log, ref_y_log, wx_cmd_log, wy_cmd_log).
+    wx_cmd / wy_cmd are roll/pitch-rate commands — proxies for control effort.
     """
     kp, ki, kd, att_kp = gains
 
@@ -91,15 +92,18 @@ def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
 
     t_log      = np.zeros(N)
     x_log      = np.zeros(N)
-    ref_log    = np.zeros(N)
+    y_log      = np.zeros(N)
+    ref_x_log  = np.zeros(N)
+    ref_y_log  = np.zeros(N)
+    wx_cmd_log = np.zeros(N)
     wy_cmd_log = np.zeros(N)
 
     for i in range(N):
         t = i * DT
 
-        # Sinusoidal tracking reference (moving target)
+        # Sinusoidal references in both axes — π/2 phase offset avoids identical signals
         ref_x = REF_AMP * np.sin(REF_OMEGA * t)
-        ref_y = 0.0
+        ref_y = REF_AMP * np.sin(REF_OMEGA * t + np.pi / 2)
         ref_z = 2.0
 
         # ── Outer PID ────────────────────────────────────────────────────────
@@ -155,25 +159,27 @@ def simulate(gains: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
 
         t_log[i]      = t
         x_log[i]      = x
-        ref_log[i]    = ref_x
+        y_log[i]      = y
+        ref_x_log[i]  = ref_x
+        ref_y_log[i]  = ref_y
+        wx_cmd_log[i] = roll_rate_cmd
         wy_cmd_log[i] = pitch_rate_cmd
 
-    return t_log, x_log, ref_log, wy_cmd_log
+    return t_log, x_log, y_log, ref_x_log, ref_y_log, wx_cmd_log, wy_cmd_log
 
 
 def itae_cost(gains: np.ndarray) -> float:
     """ITAE tracking error + control-effort smoothing penalty.
 
-    cost = integral(t * |e|) + SMOOTHING * integral(pitch_rate_cmd²)
+    cost = integral(t * (|ex| + |ey|)) + SMOOTHING * integral(wx_cmd² + wy_cmd²)
 
-    The smoothing term penalises large body-rate commands, biasing the
-    optimiser toward gains that track without aggressive attitude swings.
+    Both axes are weighted equally; smoothing covers roll and pitch effort.
     """
     if gains[0] <= 0 or gains[3] <= 0:  # kp and attitude_kp must be positive
         return 1e9
-    t, x, ref, wy_cmd = simulate(gains)
-    itae   = float(np.trapz(t * np.abs(x - ref), t))
-    effort = float(np.trapz(wy_cmd ** 2, t))
+    t, x, y, ref_x, ref_y, wx_cmd, wy_cmd = simulate(gains)
+    itae   = float(np.trapz(t * (np.abs(x - ref_x) + np.abs(y - ref_y)), t))
+    effort = float(np.trapz(wx_cmd ** 2 + wy_cmd ** 2, t))
     return itae + SMOOTHING * effort
 
 
@@ -206,29 +212,36 @@ def main():
     print(f"  attitude_kp: {att_kp:.3f}")
 
     if not args.no_plot:
-        t0, x0_sim, ref0, wy0 = simulate(np.array([1.0, 0.2, 0.3, 8.0]))  # initial
-        t1, x1_sim, ref1, wy1 = simulate(result.x)                          # optimised
+        init_gains = np.array([1.0, 0.2, 0.3, 8.0])
+        t0, x0s, y0s, rx0, ry0, wx0, wy0 = simulate(init_gains)
+        t1, x1s, y1s, rx1, ry1, wx1, wy1 = simulate(result.x)
 
-        fig, axes = plt.subplots(2, 2, figsize=(13, 7))
+        fig, axes = plt.subplots(3, 2, figsize=(13, 10))
 
-        for col, (t, xs, wy, ref, label) in enumerate([
-            (t0, x0_sim, wy0, ref0, "Initial gains"),
-            (t1, x1_sim, wy1, ref1, f"Optimised (cost={result.fun:.3f})"),
+        for col, (t, xs, ys, rx, ry, wx, wy, label) in enumerate([
+            (t0, x0s, y0s, rx0, ry0, wx0, wy0, "Initial gains"),
+            (t1, x1s, y1s, rx1, ry1, wx1, wy1, f"Optimised (cost={result.fun:.3f})"),
         ]):
-            ax_pos = axes[0, col]
-            ax_pos.plot(t, ref,  "k--", linewidth=1,   label="Reference")
-            ax_pos.plot(t, xs,   "b-",  linewidth=1.5, label=label)
-            ax_pos.set_ylabel("x [m]")
-            ax_pos.set_title(label)
-            ax_pos.legend(fontsize=8)
-            ax_pos.grid(True)
+            axes[0, col].plot(t, rx, "k--", linewidth=1,   label="ref x")
+            axes[0, col].plot(t, xs, "b-",  linewidth=1.5, label="x")
+            axes[0, col].set_ylabel("x [m]")
+            axes[0, col].set_title(label)
+            axes[0, col].legend(fontsize=8)
+            axes[0, col].grid(True)
 
-            ax_cmd = axes[1, col]
-            ax_cmd.plot(t, wy, "r-", linewidth=1.2)
-            ax_cmd.set_xlabel("Time [s]")
-            ax_cmd.set_ylabel("pitch_rate_cmd [rad/s]")
-            ax_cmd.set_title("Control effort")
-            ax_cmd.grid(True)
+            axes[1, col].plot(t, ry, "k--", linewidth=1,   label="ref y")
+            axes[1, col].plot(t, ys, "g-",  linewidth=1.5, label="y")
+            axes[1, col].set_ylabel("y [m]")
+            axes[1, col].legend(fontsize=8)
+            axes[1, col].grid(True)
+
+            axes[2, col].plot(t, wx, "r-",  linewidth=1.2, label="wx_cmd (roll)")
+            axes[2, col].plot(t, wy, "m--", linewidth=1.2, label="wy_cmd (pitch)")
+            axes[2, col].set_xlabel("Time [s]")
+            axes[2, col].set_ylabel("body-rate cmd [rad/s]")
+            axes[2, col].set_title("Control effort")
+            axes[2, col].legend(fontsize=8)
+            axes[2, col].grid(True)
 
         plt.suptitle(
             f"Tracking  |  wn={WN} rad/s  zeta={ZETA}"
