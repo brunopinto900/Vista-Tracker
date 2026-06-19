@@ -6,7 +6,7 @@ base: ../base.yaml
 # the planner to replan repeatedly as the drone's line of sight changes.
 
 sim:
-  T: 100.0
+  T: 60.0
 
 drone_init:
   x: -8.0
