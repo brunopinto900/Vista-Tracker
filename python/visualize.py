@@ -180,23 +180,31 @@ ax_err.grid(True)
 
 error_line, = ax_err.plot([], [], "r-", linewidth=1.5)
 
-# ── Panel (1,0): Yaw heading error ───────────────────────────────────────────
+# ── Panel (1,0): Yaw — reference, state, and heading error ───────────────────
 
-ax_yaw.set_title(f"Heading Error  (FoV = {FOV_DEG:.0f}°, target in FoV if |error| < {FOV_DEG/2:.0f}°)")
-ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Heading error [rad]")
+ax_yaw.set_title(f"Yaw  (FoV = {FOV_DEG:.0f}°, target in FoV if |error| < {FOV_DEG/2:.0f}°)")
+ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Angle / Error [rad]")
 ax_yaw.set_xlim(0, tmax)
-ax_yaw.set_ylim(*_ylim(df["yaw_error"], pad=HALF_FOV + 0.1))
+ax_yaw.set_ylim(*_ylim(df["yaw_error"], df["ref_yaw"], df["drone_yaw"], pad=0.2))
 ax_yaw.grid(True)
 
-# Zero reference and ±half-FoV acceptance band (static)
-ax_yaw.axhline(0, color="k", linewidth=0.8, linestyle="--", zorder=2)
+# ±half-FoV acceptance band centred on zero (error interpretation)
 ax_yaw.fill_between([0, tmax], -HALF_FOV, HALF_FOV,
-                    color="green", alpha=0.15, zorder=2)
-ax_yaw.axhline( HALF_FOV, color="green", linewidth=1.2,
-               label=f"±{FOV_DEG/2:.0f}° FoV boundary", zorder=3)
-ax_yaw.axhline(-HALF_FOV, color="green", linewidth=1.2, zorder=3)
+                    color="green", alpha=0.10, zorder=1)
+ax_yaw.axhline( HALF_FOV, color="green", linewidth=1.0, linestyle=":",
+               label=f"±{FOV_DEG/2:.0f}° FoV boundary", zorder=2)
+ax_yaw.axhline(-HALF_FOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
 
-yaw_line, = ax_yaw.plot([], [], "b-", linewidth=1.5, label="heading error", zorder=4)
+# Static yaw reference (full horizon) — dashed, matches setpoint convention elsewhere
+ax_yaw.plot(df["t"], df["ref_yaw"], color="orange", linewidth=1.0,
+            linestyle="--", label="yaw ref", zorder=3)
+
+# Animated: actual yaw state and heading error
+yaw_state_line, = ax_yaw.plot([], [], color="steelblue", linewidth=1.5,
+                               label="drone yaw", zorder=4)
+yaw_line,       = ax_yaw.plot([], [], color="crimson",   linewidth=1.5,
+                               label="heading error", zorder=5)
+ax_yaw.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
 ax_yaw.legend(fontsize=8)
 
 # ── Panel (1,1): Body Rates ───────────────────────────────────────────────────
@@ -273,7 +281,7 @@ ax_other.set_title("Reserved")
 
 _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                error_line,
-               yaw_line,
+               yaw_state_line, yaw_line,
                wx_line, wy_line, wz_line,
                drone_vx_line, drone_vy_line,
                roll_line, pitch_line)
@@ -319,7 +327,8 @@ def update(frame):
     # (0,1) Error
     error_line.set_data(t, sub["distance_error"])
 
-    # (1,0) Yaw heading error
+    # (1,0) Yaw: state, reference, and heading error
+    yaw_state_line.set_data(t, sub["drone_yaw"])
     yaw_line.set_data(t, sub["yaw_error"])
 
     # (1,1) Body rates
