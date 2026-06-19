@@ -13,7 +13,7 @@ sim:
 
 camera:
   fov:   360.0           # horizontal field of view (degrees) — omnidirectional
-  range:   6.0           # sensing/detection range (metres)
+  range:   8.0           # sensing/detection range (metres)
 
 estimator:
   horizon:      10
@@ -30,7 +30,7 @@ controller:
 planner:
   standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
   wp_reach_thresh:  0.5    # advance to next waypoint when drone is within this radius (m)
-  replan_goal_dist: 1.5    # trigger replan when standoff goal shifts more than this (m)
+  replan_goal_dist: 4.0    # trigger replan when standoff goal shifts more than this (m)
   rrt:
     step_size:      0.8    # RRT extension step (m)
     goal_bias:      0.10   # fraction of samples directed at goal
