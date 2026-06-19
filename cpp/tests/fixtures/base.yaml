@@ -4,7 +4,7 @@ estimator:
   horizon: 5
   motion_model: CV
 controller:
-  kp: 1.0
-  ki: 0.0
-  kd: 0.0
+  kp_pos: 1.0
+  kp_vel: 1.0
+  ki_vel: 0.0
   desired_distance: 4.0

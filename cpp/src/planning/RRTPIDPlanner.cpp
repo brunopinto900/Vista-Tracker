@@ -65,6 +65,8 @@ Reference RRTPIDPlanner::update(
         ref.y = goal[1];
     }
     ref.z   = cfg_.z_ref;
+    ref.vx  = t.vx;  // target velocity feedforward — reduces standoff lag at speed
+    ref.vy  = t.vy;
     ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);  // always face target
 
     // Populate trajectory for future MPC consumer

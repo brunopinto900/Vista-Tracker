@@ -12,9 +12,9 @@ sim:
   T: 45.0
 
 controller:
-  kp: 1.5
-  ki: 0.1
-  kd: 0.4
+  kp_pos: 1.6
+  kp_vel: 5.0
+  ki_vel: 0.2
 
 target_trajectory:
   type: person

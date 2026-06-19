@@ -3,13 +3,15 @@
 #include "control/IController.hpp"
 #include "control/PID.hpp"
 
-// Cascade controller: position error → desired acceleration →
-//                     attitude setpoints → body-rate commands.
-// Serves as a placeholder until the MPC replaces it.
+// PX4-style position-velocity cascade controller.
+//
+// Outer loop (position P):   vel_sp = kp_pos * pos_err + ref_vel  (feedforward)
+// Inner loop (velocity PID): accel  = kp_vel * vel_err + ki_vel * ∫vel_err
+// Attitude conversion:       accel  → roll/pitch setpoints → body-rate commands
 class PIDController : public IController
 {
 public:
-    PIDController(double kp, double ki, double kd,
+    PIDController(double kp_pos, double kp_vel, double ki_vel,
                   double attitude_kp = 5.0,
                   double yaw_kp      = 0.3);
 
@@ -19,9 +21,8 @@ public:
         double           dt) override;
 
 private:
-    PID    pid_x_;
-    PID    pid_y_;
-    PID    pid_z_;
+    double kp_pos_;
+    PID    pid_vx_, pid_vy_, pid_vz_;  // velocity-error integrators (kp_vel, ki_vel)
     double attitude_kp_;
     double yaw_kp_;
 };

@@ -12,7 +12,7 @@ TEST(ConfigLoader, StandaloneLoadsAllFields)
     EXPECT_DOUBLE_EQ(cfg.sim.T,                    10.0);
     EXPECT_EQ       (cfg.estimator.horizon,         10);
     EXPECT_EQ       (cfg.estimator.motion_model,    "CA");
-    EXPECT_DOUBLE_EQ(cfg.controller.kp,             1.5);
+    EXPECT_DOUBLE_EQ(cfg.controller.kp_pos,          1.5);
     EXPECT_DOUBLE_EQ(cfg.controller.desired_distance, 5.0);
     EXPECT_DOUBLE_EQ(cfg.drone_init.x,              1.0);
     EXPECT_DOUBLE_EQ(cfg.drone_init.y,              2.0);
@@ -27,8 +27,8 @@ TEST(ConfigLoader, BaseInheritanceThenOverride)
     Config cfg = ConfigLoader::load(kFix + "/override_kp.yaml");
 
     EXPECT_DOUBLE_EQ(cfg.sim.dt,          0.05);  // from base
-    EXPECT_DOUBLE_EQ(cfg.controller.ki,   0.0);   // from base
-    EXPECT_DOUBLE_EQ(cfg.controller.kp,   2.5);   // overridden by scenario
+    EXPECT_DOUBLE_EQ(cfg.controller.ki_vel,  0.0);  // from base
+    EXPECT_DOUBLE_EQ(cfg.controller.kp_pos, 2.5);  // overridden by scenario
     EXPECT_EQ       (cfg.estimator.horizon, 5);   // from base
 }
 

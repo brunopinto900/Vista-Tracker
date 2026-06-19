@@ -68,9 +68,9 @@ int main(int argc, char* argv[])
               << " T=" << cfg.sim.T << "\n"
               << "[config] estimator       horizon=" << cfg.estimator.horizon
               << " motion_model=" << cfg.estimator.motion_model << "\n"
-              << "[config] controller      kp=" << cfg.controller.kp
-              << " ki=" << cfg.controller.ki
-              << " kd=" << cfg.controller.kd
+              << "[config] controller      kp_pos=" << cfg.controller.kp_pos
+              << " kp_vel=" << cfg.controller.kp_vel
+              << " ki_vel=" << cfg.controller.ki_vel
               << " desired_distance=" << cfg.controller.desired_distance << "\n"
               << "[config] planner         standoff=" << cfg.planner.standoff_dist
               << " wp_thresh=" << cfg.planner.wp_reach_thresh
@@ -114,9 +114,9 @@ int main(int argc, char* argv[])
     planner_cfg.rrt.y_max          = cfg.world.grid.y_max;
 
     RRTPIDPlanner         planner(planner_cfg);
-    PIDController         controller(cfg.controller.kp,
-                                     cfg.controller.ki,
-                                     cfg.controller.kd,
+    PIDController         controller(cfg.controller.kp_pos,
+                                     cfg.controller.kp_vel,
+                                     cfg.controller.ki_vel,
                                      cfg.controller.attitude_kp,
                                      cfg.controller.yaw_kp);
 

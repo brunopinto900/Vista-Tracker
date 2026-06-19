@@ -7,10 +7,10 @@
 static constexpr double kG  = 9.81;
 static constexpr double kDt = 0.05;
 
-// kp=1, ki=0, kd=0 → stateless; att_kp=1, yaw_kp=1 for easy hand-calculation.
-static PIDController make_ctrl(double kp = 1.0, double att_kp = 1.0, double yaw_kp = 1.0)
+// kp_pos=1, kp_vel=1, ki_vel=0 → stateless; att_kp=1, yaw_kp=1 for easy hand-calculation.
+static PIDController make_ctrl(double kp_pos = 1.0, double att_kp = 1.0, double yaw_kp = 1.0)
 {
-    return PIDController(kp, 0.0, 0.0, att_kp, yaw_kp);
+    return PIDController(kp_pos, 1.0, 0.0, att_kp, yaw_kp);
 }
 
 // At zero position error, thrust must equal gravity-normalised hover (1.0)
@@ -62,7 +62,7 @@ TEST(PIDController, YawNinetyForwardErrorProducesRoll)
 // drone yaw ≈ +π,  ref yaw ≈ −π  →  true error ≈ +0.1 rad (not ±2π − 0.1).
 TEST(PIDController, YawErrorWrapsAtPiBoundary)
 {
-    auto ctrl = make_ctrl(/*kp*/1.0, /*att_kp*/1.0, /*yaw_kp*/1.0);
+    auto ctrl = make_ctrl(/*kp_pos*/1.0, /*att_kp*/1.0, /*yaw_kp*/1.0);
     State     s{};  s.yaw   =  M_PI - 0.05;
     Reference r{};  r.yaw   = -(M_PI - 0.05);
 

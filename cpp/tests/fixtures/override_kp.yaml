@@ -1,4 +1,4 @@
 base: base.yaml
 
 controller:
-  kp: 2.5
+  kp_pos: 2.5

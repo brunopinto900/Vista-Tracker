@@ -22,9 +22,9 @@ struct DroneConfig
 
 struct ControllerConfig
 {
-    double kp               = 1.0;
-    double ki               = 0.0;
-    double kd               = 0.0;
+    double kp_pos           = 1.5;  // outer position loop P gain (pos error → vel setpoint)
+    double kp_vel           = 5.0;  // inner velocity loop P gain (vel error → acceleration)
+    double ki_vel           = 0.2;  // inner velocity loop I gain (eliminates vel steady-state error)
     double desired_distance = 4.0;
     double attitude_kp      = 5.0;  // roll/pitch inner loop (rad/s per rad)
     double yaw_kp           = 0.3;  // yaw inner loop (rad/s per rad) — slower plant

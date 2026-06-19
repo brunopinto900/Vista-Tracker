@@ -7,11 +7,12 @@ static constexpr double kG        = 9.81;
 static constexpr double kMaxAngle = 0.5;    // rad (~28°) — tilt limit
 static constexpr double kMaxThrust = 2.0;   // normalised
 
-PIDController::PIDController(double kp, double ki, double kd,
+PIDController::PIDController(double kp_pos, double kp_vel, double ki_vel,
                              double attitude_kp, double yaw_kp)
-    : pid_x_(kp, ki, kd)
-    , pid_y_(kp, ki, kd)
-    , pid_z_(kp, ki, kd)
+    : kp_pos_(kp_pos)
+    , pid_vx_(kp_vel, ki_vel)
+    , pid_vy_(kp_vel, ki_vel)
+    , pid_vz_(kp_vel, ki_vel)
     , attitude_kp_(attitude_kp)
     , yaw_kp_(yaw_kp)
 {}
@@ -21,10 +22,15 @@ ControlCommand PIDController::update(
     const Reference& reference,
     double           dt)
 {
-    // ── Outer loop: position error → desired world-frame acceleration ─────────
-    const double ax_des = pid_x_.update(reference.x - drone.x, dt);
-    const double ay_des = pid_y_.update(reference.y - drone.y, dt);
-    const double az_des = pid_z_.update(reference.z - drone.z, dt);
+    // ── Outer loop: position P → velocity setpoint (with feedforward) ─────────
+    const double vx_sp = kp_pos_ * (reference.x - drone.x) + reference.vx;
+    const double vy_sp = kp_pos_ * (reference.y - drone.y) + reference.vy;
+    const double vz_sp = kp_pos_ * (reference.z - drone.z) + reference.vz;
+
+    // ── Inner loop: velocity PID → desired world-frame acceleration ───────────
+    const double ax_des = pid_vx_.update(vx_sp - drone.vx, dt);
+    const double ay_des = pid_vy_.update(vy_sp - drone.vy, dt);
+    const double az_des = pid_vz_.update(vz_sp - drone.vz, dt);
 
     // ── Attitude setpoints from desired horizontal acceleration ───────────────
     // Rotate world-frame desired acceleration into body horizontal plane so

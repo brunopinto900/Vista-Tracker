@@ -5,10 +5,10 @@ estimator:
   horizon: 10
   motion_model: CA
 controller:
-  kp: 1.5
-  ki: 0.2
-  kd: 0.1
-  desired_distance: 4.0
+  kp_pos: 1.5
+  kp_vel: 1.0
+  ki_vel: 0.2
+  desired_distance: 5.0
 drone_init:
   x: 1.0
   y: 2.0

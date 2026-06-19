@@ -20,9 +20,9 @@ estimator:
   motion_model: CV      # CV | CTRV | CA
 
 controller:
-  kp:               8.154  # ITAE+smoothing-optimised for 2-axis sinusoidal tracking
-  ki:               0.267
-  kd:               5.000
+  kp_pos:           1.6    # outer position loop P gain (pos error → vel setpoint)
+  kp_vel:           5.0    # inner velocity loop P gain (vel error → acceleration)
+  ki_vel:           0.2    # inner velocity loop I gain (eliminates steady-state vel error)
   desired_distance: 4.0
   attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
   yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
