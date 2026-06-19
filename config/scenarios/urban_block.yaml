@@ -14,7 +14,12 @@ drone_init:
   z:  4.0
 
 controller:
+  kp:               10.154  # ITAE+smoothing-optimised for 2-axis sinusoidal tracking
+  ki:               1.267
+  kd:               5.000
   desired_distance: 4.0
+  attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
+  yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
 
 target_trajectory:
   type: person
