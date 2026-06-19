@@ -1,0 +1,51 @@
+base: ../base.yaml
+
+# Scenario: Wall Corridor
+# Two solid obstacle walls form a 10m-wide corridor from x=5 to x=35.
+# The drone starts north of the corridor entrance (y=+15), so a naive
+# straight-line path hits the north wall. RRT must route to the entrance
+# and then track the target through the corridor.
+
+sim:
+  T: 70.0
+
+drone_init:
+  x: -5.0
+  y: 15.0
+  z:  4.0
+
+controller:
+  desired_distance: 8.0
+
+target_trajectory:
+  type: person
+  max_accel: 1.0
+  max_speed: 2.0
+  max_lateral_accel: 4.0
+  loop: false
+  waypoints:
+    - pos: [  0.0, 0.0, 0.0]
+      speed: 2.0
+    - pos: [ 40.0, 0.0, 0.0]
+      speed: 2.0
+
+world:
+  grid:
+    x_min: -12.0
+    x_max:  50.0
+    y_min: -20.0
+    y_max:  20.0
+  obstacles:
+    # South wall at y=-8 (inner edge at y=-5, outer at y=-11)
+    # size=3, spacing=6 → contiguous coverage from x=5 to x=35
+    - {x:  8.0, y: -8.0, size: 3.0}
+    - {x: 14.0, y: -8.0, size: 3.0}
+    - {x: 20.0, y: -8.0, size: 3.0}
+    - {x: 26.0, y: -8.0, size: 3.0}
+    - {x: 32.0, y: -8.0, size: 3.0}
+    # North wall at y=+8 (inner edge at y=+5, outer at y=+11)
+    - {x:  8.0, y:  8.0, size: 3.0}
+    - {x: 14.0, y:  8.0, size: 3.0}
+    - {x: 20.0, y:  8.0, size: 3.0}
+    - {x: 26.0, y:  8.0, size: 3.0}
+    - {x: 32.0, y:  8.0, size: 3.0}

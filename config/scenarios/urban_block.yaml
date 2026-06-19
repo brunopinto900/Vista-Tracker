@@ -1,0 +1,60 @@
+base: ../base.yaml
+
+# Scenario: Urban Block
+# Six building-sized obstacles scattered across a 70x50m area.
+# Target weaves between them using sharp lateral changes, forcing
+# the planner to replan repeatedly as the drone's line of sight changes.
+
+sim:
+  T: 100.0
+
+drone_init:
+  x: -8.0
+  y:  0.0
+  z:  4.0
+
+controller:
+  desired_distance: 8.0
+
+target_trajectory:
+  type: person
+  max_accel: 1.5
+  max_speed: 2.0
+  max_lateral_accel: 6.0
+  loop: false
+  waypoints:
+    - pos: [  0.0,   0.0, 0.0]
+      speed: 2.0
+    - pos: [ 12.0, -13.0, 0.0]   # pass south of block A pair (slope keeps y<-10.5 at x=11.5)
+      speed: 1.5
+    - pos: [ 20.0, -13.0, 0.0]   # clear block A eastern edge before turning north
+      speed: 1.5
+    - pos: [ 20.0,   6.0, 0.0]   # swing north at x=20, west of block B (x=[23.5,32.5])
+      speed: 2.0
+    - pos: [ 35.0,   6.0, 0.0]   # east above block B (y=6 > top edge 4.5)
+      speed: 2.0
+      hold: 3.0                   # pause — simulates pedestrian stopping
+    - pos: [ 38.0,   0.0, 0.0]   # drop to y=0 at x=38, just west of block C (x=[38.5,45.5])
+      speed: 1.5
+    - pos: [ 50.0,   0.0, 0.0]   # thread block C gap at y=0 (gap is y=[-4.5,+4.5])
+      speed: 2.0
+    - pos: [ 55.0,   5.0, 0.0]   # clear run to exit, above block D (y=[-7.5,-2.5])
+      speed: 2.5
+
+world:
+  grid:
+    x_min: -15.0
+    x_max:  65.0
+    y_min: -25.0
+    y_max:  25.0
+  obstacles:
+    # Block A — left pair
+    - {x: 15.0, y: -7.0, size: 3.5}
+    - {x: 15.0, y:  7.0, size: 3.5}
+    # Block B — centre blocker
+    - {x: 28.0, y:  0.0, size: 4.5}
+    # Block C — right pair
+    - {x: 42.0, y: -8.0, size: 3.5}
+    - {x: 42.0, y:  8.0, size: 3.5}
+    # Block D — late funnel
+    - {x: 54.0, y: -5.0, size: 2.5}

@@ -4,12 +4,12 @@ base: ../base.yaml
 # Person approaches a large obstacle, veers left around it, resumes course.
 
 drone_init:
-  x: -6.0
+  x: -8.0
   y:  0.0
   z:  2.0
 
 sim:
-  T: 20.0
+  T: 50.0
 
 controller:
   kp:               8.154  # ITAE+smoothing-optimised for 2-axis sinusoidal tracking
@@ -33,26 +33,41 @@ target_trajectory:
   max_lateral_accel: 4.0
   loop: false
   waypoints:
-    - pos: [0.0,  0.0, 0.0]
+    - pos: [-5.0,  0.0, 0.0]
+      speed: 2.0
+    - pos: [ 0.0,  0.0, 0.0]
       speed: 1.0
-    - pos: [2.0,  0.0, 0.0]
+    - pos: [ 2.0,  0.0, 0.0]    # slow — obstacle ahead
       speed: 0.8
-    - pos: [3.0,  3.0, 0.0]
+    - pos: [ 3.0,  3.0, 0.0]    # veer left around obstacle A
       speed: 0.8
-    - pos: [5.0,  3.0, 0.0]
+    - pos: [ 5.0,  3.0, 0.0]
       speed: 1.0
-    - pos: [7.0,  0.0, 0.0]
+    - pos: [ 7.0,  0.0, 0.0]    # resume course
       speed: 1.5
-    - pos: [14.0, 0.0, 0.0]
+    - pos: [14.0,  0.0, 0.0]
+      speed: 2.0
+    - pos: [17.0,  0.0, 0.0]    # slow — obstacle B ahead
+      speed: 0.8
+    - pos: [18.0, -3.0, 0.0]    # veer right around obstacle B
+      speed: 0.8
+    - pos: [21.0, -3.0, 0.0]
+      speed: 1.0
+    - pos: [23.0,  0.0, 0.0]    # resume course
+      speed: 1.5
+    - pos: [32.0,  0.0, 0.0]
       speed: 2.0
 
 world:
   grid:
-    x_min: -8.0
-    x_max:  16.0
-    y_min:  -4.0
-    y_max:   6.0
+    x_min: -10.0
+    x_max:  36.0
+    y_min:  -8.0
+    y_max:   8.0
   obstacles:
-    - x: 4.0
-      y: 0.0
+    - x:  4.0
+      y:  0.0
+      size: 1.5
+    - x: 20.0
+      y:  0.0
       size: 1.5

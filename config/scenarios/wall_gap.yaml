@@ -1,0 +1,50 @@
+base: ../base.yaml
+
+# Scenario: Wall with Gap
+# Classic RRT narrow-passage test. A solid wall at x=25 spans the full
+# y-extent of the world except for an 8m gap centred at y=0.
+# A straight-line planner fails; RRT must find and pass through the gap.
+# The target walks a straight shot through the gap — the drone must follow.
+
+sim:
+  T: 60.0
+
+drone_init:
+  x: -5.0
+  y: 12.0    # starts off-axis — naive path hits the wall
+  z:  4.0
+
+controller:
+  desired_distance: 8.0
+
+target_trajectory:
+  type: person
+  max_accel: 1.0
+  max_speed: 2.5
+  max_lateral_accel: 4.0
+  loop: false
+  waypoints:
+    - pos: [  0.0, 0.0, 0.0]
+      speed: 2.5
+    - pos: [ 25.0, 0.0, 0.0]   # approach the gap
+      speed: 1.5
+      hold: 2.0                  # slow down near the wall
+    - pos: [ 50.0, 0.0, 0.0]
+      speed: 2.5
+
+world:
+  grid:
+    x_min: -10.0
+    x_max:  60.0
+    y_min: -22.0
+    y_max:  22.0
+  obstacles:
+    # South wall section (y=-18 to y=-4, solid)
+    - {x: 25.0, y: -18.0, size: 3.5}
+    - {x: 25.0, y: -11.0, size: 3.5}  # spans [-14.5, -7.5]
+    - {x: 25.0, y:  -5.5, size: 2.0}  # spans [ -7.5, -3.5] — closes to gap edge
+    # North wall section (y=+4 to y=+18, solid)
+    - {x: 25.0, y:   5.5, size: 2.0}  # spans [  3.5,  7.5] — closes to gap edge
+    - {x: 25.0, y:  11.0, size: 3.5}  # spans [  7.5, 14.5]
+    - {x: 25.0, y:  18.0, size: 3.5}
+    # Gap: y=-3.5 to y=+3.5 (7m clear)
