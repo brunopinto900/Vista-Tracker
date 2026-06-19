@@ -8,7 +8,7 @@
 #include "perception/GroundTruthPerception.hpp"
 #include "estimation/PerfectEstimator.hpp"
 #include "mapping/FakeESDFMap.hpp"
-#include "planning/SimplePlanner.hpp"
+#include "planning/RRTPIDPlanner.hpp"
 #include "control/PIDController.hpp"
 
 namespace fs = std::filesystem;
@@ -72,6 +72,13 @@ int main(int argc, char* argv[])
               << " ki=" << cfg.controller.ki
               << " kd=" << cfg.controller.kd
               << " desired_distance=" << cfg.controller.desired_distance << "\n"
+              << "[config] planner         standoff=" << cfg.planner.standoff_dist
+              << " wp_thresh=" << cfg.planner.wp_reach_thresh
+              << " replan_dist=" << cfg.planner.replan_goal_dist << "\n"
+              << "[config] planner.rrt     step=" << cfg.planner.step_size
+              << " bias=" << cfg.planner.goal_bias
+              << " margin=" << cfg.planner.safety_margin
+              << " max_iter=" << cfg.planner.max_iter << "\n"
               << "[config] world.grid      x=[" << cfg.world.grid.x_min
               << ", " << cfg.world.grid.x_max << "]"
               << " y=[" << cfg.world.grid.y_min
@@ -89,7 +96,24 @@ int main(int argc, char* argv[])
     GroundTruthPerception perception(sim);
     PerfectEstimator      estimator(cfg.estimator.horizon);
     FakeESDFMap           esdf(cfg.world);
-    SimplePlanner         planner(cfg.controller.desired_distance);
+
+    RRTPIDPlanner::Config planner_cfg;
+    planner_cfg.standoff_dist    = cfg.planner.standoff_dist;
+    planner_cfg.wp_reach_thresh  = cfg.planner.wp_reach_thresh;
+    planner_cfg.replan_goal_dist = cfg.planner.replan_goal_dist;
+    planner_cfg.z_ref            = cfg.drone_init.z;
+    planner_cfg.rrt.step_size      = cfg.planner.step_size;
+    planner_cfg.rrt.goal_bias      = cfg.planner.goal_bias;
+    planner_cfg.rrt.safety_margin  = cfg.planner.safety_margin;
+    planner_cfg.rrt.edge_check_res = cfg.planner.edge_check_res;
+    planner_cfg.rrt.max_iter       = cfg.planner.max_iter;
+    planner_cfg.rrt.goal_tol       = cfg.planner.goal_tol;
+    planner_cfg.rrt.x_min          = cfg.world.grid.x_min;
+    planner_cfg.rrt.x_max          = cfg.world.grid.x_max;
+    planner_cfg.rrt.y_min          = cfg.world.grid.y_min;
+    planner_cfg.rrt.y_max          = cfg.world.grid.y_max;
+
+    RRTPIDPlanner         planner(planner_cfg);
     PIDController         controller(cfg.controller.kp,
                                      cfg.controller.ki,
                                      cfg.controller.kd,

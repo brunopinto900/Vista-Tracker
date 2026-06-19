@@ -19,6 +19,8 @@ add_executable(tracker
     src/mapping/FakeESDFMap.cpp
     src/perception/GroundTruthPerception.cpp
     src/planning/SimplePlanner.cpp
+    src/planning/RRT.cpp
+    src/planning/RRTPIDPlanner.cpp
     src/sim_impl/KinematicSim.cpp
     src/sim_impl/WaypointFollower.cpp
 )
