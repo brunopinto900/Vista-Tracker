@@ -19,7 +19,7 @@ controller:
   kd:               5.000
   desired_distance: 4.0
   attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
-  yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
+  yaw_kp:           0.8  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
 
 target_trajectory:
   type: person
@@ -63,3 +63,15 @@ world:
     - {x: 42.0, y:  8.0, size: 3.5}
     # Block D — late funnel
     - {x: 54.0, y: -5.0, size: 2.5}
+
+planner:
+  standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
+  wp_reach_thresh:  0.514
+  replan_goal_dist: 3.867
+  rrt:
+    step_size:     0.796
+    goal_bias:     0.103
+    safety_margin: 0.308
+    edge_check_res: 0.1    # collision-check sample spacing along edge (m)
+    max_iter:       4000   # RRT iteration budget per replan call
+    goal_tol:       0.5    # goal-reached radius (m)
