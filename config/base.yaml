@@ -26,3 +26,15 @@ controller:
   desired_distance: 4.0
   attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
   yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
+
+planner:
+  standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
+  wp_reach_thresh:  0.5    # advance to next waypoint when drone is within this radius (m)
+  replan_goal_dist: 1.5    # trigger replan when standoff goal shifts more than this (m)
+  rrt:
+    step_size:      0.8    # RRT extension step (m)
+    goal_bias:      0.10   # fraction of samples directed at goal
+    safety_margin:  0.3    # min clearance from obstacle surface (m)
+    edge_check_res: 0.1    # collision-check sample spacing along edge (m)
+    max_iter:       4000   # RRT iteration budget per replan call
+    goal_tol:       0.5    # goal-reached radius (m)

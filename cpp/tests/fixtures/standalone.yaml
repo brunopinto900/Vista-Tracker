@@ -8,7 +8,7 @@ controller:
   kp: 1.5
   ki: 0.2
   kd: 0.1
-  desired_distance: 5.0
+  desired_distance: 4.0
 drone_init:
   x: 1.0
   y: 2.0

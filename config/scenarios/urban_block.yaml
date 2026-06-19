@@ -14,7 +14,7 @@ drone_init:
   z:  4.0
 
 controller:
-  desired_distance: 8.0
+  desired_distance: 4.0
 
 target_trajectory:
   type: person
