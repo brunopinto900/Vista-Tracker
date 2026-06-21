@@ -129,7 +129,9 @@ int main(int argc, char* argv[])
          << "drone_roll,drone_pitch,drone_yaw,"
          << "drone_wx,drone_wy,drone_wz,"
          << "target_vx,target_vy,target_vz,"
-         << "roll_rate,pitch_rate,yaw_rate,thrust\n";
+         << "roll_rate,pitch_rate,yaw_rate,thrust,"
+         << "ref_x,ref_y,ref_z,"
+         << "vel_ref_x,vel_ref_y,vel_ref_z\n";
 
     for (double t = 0.0; t < cfg.sim.T; t += cfg.sim.dt)
     {
@@ -151,7 +153,9 @@ int main(int argc, char* argv[])
              << d.wx           << "," << d.wy          << "," << d.wz          << ","
              << tr.vx          << "," << tr.vy          << "," << tr.vz         << ","
              << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate  << ","
-             << cmd.thrust
+             << cmd.thrust     << ","
+             << ref.x          << "," << ref.y          << "," << ref.z         << ","
+             << cmd.vx_sp      << "," << cmd.vy_sp      << "," << cmd.vz_sp
              << "\n";
     }
 

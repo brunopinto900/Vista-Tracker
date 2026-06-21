@@ -52,5 +52,5 @@ ControlCommand PIDController::update(
     const double yaw_err = std::remainder(reference.yaw - drone.yaw, 2.0 * M_PI);
     const double yaw_rate = yaw_kp_ * yaw_err;
 
-    return {roll_rate, pitch_rate, yaw_rate, thrust};
+    return {roll_rate, pitch_rate, yaw_rate, thrust, vx_sp, vy_sp, vz_sp};
 }

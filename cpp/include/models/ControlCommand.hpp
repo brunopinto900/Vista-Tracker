@@ -9,4 +9,7 @@ struct ControlCommand
     double pitch_rate = 0.0;
     double yaw_rate   = 0.0;
     double thrust     = 1.0;  // default: hover
+    double vx_sp = 0.0;       // velocity setpoint from outer position loop
+    double vy_sp = 0.0;
+    double vz_sp = 0.0;
 };

@@ -93,6 +93,8 @@ df["roll_des"]  = df["drone_roll"]  + df["roll_rate"]  / ATT_KP
 df["pitch_des"] = df["drone_pitch"] + df["pitch_rate"] / ATT_KP
 
 has_body_rates = "drone_wx" in df.columns
+has_vel_ref    = "vel_ref_x" in df.columns
+has_ref_pos    = "ref_x" in df.columns
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -154,10 +156,21 @@ for i, obs in enumerate(obstacles):
 ax_traj.plot(df["target_x"], df["target_y"],
              "g--", linewidth=1, label="Target path", zorder=3)
 
+if has_ref_pos:
+    ax_traj.plot(df["ref_x"], df["ref_y"],
+                 color="darkorange", linewidth=1, linestyle=":",
+                 label="Desired ref path", zorder=3)
+
 drone_path,     = ax_traj.plot([], [], "b-",  linewidth=1.5, label="Drone", zorder=4)
 drone_marker,   = ax_traj.plot([], [], "bo",  markersize=8,  zorder=5)
 target_marker,  = ax_traj.plot([], [], "g^",  markersize=8,  label="Target", zorder=5)
 desired_circle, = ax_traj.plot([], [], "b--", linewidth=1,   label=f"d={DESIRED_DISTANCE}m", zorder=4)
+
+if has_ref_pos:
+    ref_marker, = ax_traj.plot([], [], "D", color="darkorange", markersize=7,
+                                label="Desired ref", zorder=6)
+else:
+    ref_marker, = ax_traj.plot([], [], [])
 
 ARROW_LEN = 3.0  # heading arrow length (metres)
 yaw_arrow = ax_traj.quiver(
@@ -235,16 +248,25 @@ else:
 
 # ── Panel (2,0): Velocities ───────────────────────────────────────────────────
 
-ax_vel.set_title("Velocities  (target: dashed reference  |  drone: solid state)")
+ax_vel.set_title("Velocities  (target: dashed  |  vel ref: dash-dot  |  drone: solid)")
 ax_vel.set_xlabel("Time [s]"); ax_vel.set_ylabel("Velocity [m/s]")
 ax_vel.set_xlim(0, tmax)
-ax_vel.set_ylim(*_ylim(df["drone_vx"], df["drone_vy"],
-                        df["target_vx"], df["target_vy"]))
+_vel_cols = [df["drone_vx"], df["drone_vy"], df["target_vx"], df["target_vy"]]
+if has_vel_ref:
+    _vel_cols += [df["vel_ref_x"], df["vel_ref_y"]]
+ax_vel.set_ylim(*_ylim(*_vel_cols))
 ax_vel.grid(True)
 
-# Static target velocities
+# Static target velocities (feedforward reference)
 ax_vel.plot(df["t"], df["target_vx"], "r--", linewidth=1.0, label="target vx")
 ax_vel.plot(df["t"], df["target_vy"], "b--", linewidth=1.0, label="target vy")
+
+# Static controller velocity setpoints (outer-loop output)
+if has_vel_ref:
+    ax_vel.plot(df["t"], df["vel_ref_x"], color="tomato",     linewidth=1.0,
+                linestyle="-.", label="vel ref x")
+    ax_vel.plot(df["t"], df["vel_ref_y"], color="cornflowerblue", linewidth=1.0,
+                linestyle="-.", label="vel ref y")
 
 drone_vx_line, = ax_vel.plot([], [], "r-", linewidth=1.5, label="drone vx")
 drone_vy_line, = ax_vel.plot([], [], "b-", linewidth=1.5, label="drone vy")
@@ -280,6 +302,7 @@ ax_other.set_title("Reserved")
 # ── Animation ─────────────────────────────────────────────────────────────────
 
 _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
+               ref_marker,
                error_line,
                yaw_state_line, yaw_line,
                wx_line, wy_line, wz_line,
@@ -306,6 +329,8 @@ def update(frame):
     drone_path.set_data(sub["drone_x"], sub["drone_y"])
     drone_marker.set_data([dx], [dy])
     target_marker.set_data([sub["target_x"].iloc[-1]], [sub["target_y"].iloc[-1]])
+    if has_ref_pos:
+        ref_marker.set_data([sub["ref_x"].iloc[-1]], [sub["ref_y"].iloc[-1]])
     theta = np.linspace(0, 2*np.pi, 120)
     desired_circle.set_data(
         sub["target_x"].iloc[-1] + DESIRED_DISTANCE * np.cos(theta),
