@@ -98,36 +98,51 @@ has_ref_pos     = "ref_x" in df.columns
 has_deadlock    = "deadlock_active" in df.columns
 
 # ── Occlusion metric (eq. 4.28–4.29) ─────────────────────────────────────────
-# d   = min distance from each obstacle centre O to the LOS segment P→T
-# θocc = θFOV · max(0, 1 − d / dFOV)
-# dFOV = 4 m (standoff distance = max range at which obstacle fully blocks LOS)
+# d_surface = max(0, d_centre − obs.size): dist from obstacle SURFACE to LOS
+# θocc = θFOV · max(0, 1 − d_surface / dFOV)
+# dFOV = 4 m (standoff distance — surface at dFOV from LOS → zero occlusion)
 
 D_FOV = DESIRED_DISTANCE  # 4 m — normalisation distance from thesis eq. 4.29
 
 def _los_point_dist(ox, oy, px, py, tx, ty):
-    """Minimum distance from point O to segment P→T (vectorised over rows)."""
-    dx, dy   = tx - px, ty - py
-    len_sq   = dx*dx + dy*dy
-    # scalar guard for zero-length segment
-    safe     = np.where(len_sq < 1e-12, 1.0, len_sq)
-    t        = np.clip(((ox - px)*dx + (oy - py)*dy) / safe, 0.0, 1.0)
-    return np.hypot(ox - (px + t*dx), oy - (py + t*dy))
+    """Distance from O to segment P→T interior; inf if projection falls outside (0,1)."""
+    dx, dy  = tx - px, ty - py
+    len_sq  = dx*dx + dy*dy
+    safe    = np.where(len_sq < 1e-12, 1.0, len_sq)
+    t_raw   = ((ox - px)*dx + (oy - py)*dy) / safe
+    # Obstacle can only occlude if it projects strictly between drone (0) and target (1)
+    in_seg  = (t_raw > 0.0) & (t_raw < 1.0) & (len_sq >= 1e-12)
+    t_clip  = np.clip(t_raw, 0.0, 1.0)
+    d       = np.hypot(ox - (px + t_clip*dx), oy - (py + t_clip*dy))
+    return np.where(in_seg, d, np.inf)
 
 def _compute_occlusion_deg(drone_x, drone_y, target_x, target_y, obs_list, fov_deg, d_fov):
     if not obs_list:
         return np.zeros(len(drone_x))
-    # Distance from each obstacle centre to the LOS segment for all timesteps
+    # d_surface: distance from each obstacle SURFACE (not centre) to LOS segment
     dists = np.stack([
-        _los_point_dist(obs["x"], obs["y"], drone_x, drone_y, target_x, target_y)
+        np.maximum(0.0,
+            _los_point_dist(obs["x"], obs["y"], drone_x, drone_y, target_x, target_y)
+            - obs["size"])
         for obs in obs_list
     ])  # shape (n_obs, n_steps)
-    d_min = dists.min(axis=0)  # closest obstacle to LOS at each step
+    d_min = dists.min(axis=0)  # closest obstacle surface to LOS at each step
     return fov_deg * np.maximum(0.0, 1.0 - d_min / d_fov)
 
 df["occlusion_deg"] = _compute_occlusion_deg(
     df["drone_x"].to_numpy(), df["drone_y"].to_numpy(),
     df["target_x"].to_numpy(), df["target_y"].to_numpy(),
     obstacles, TRACKING_FOV_DEG, D_FOV)
+
+# Precompute per-frame time the target has been continuously outside FOV (resets on re-entry)
+_oof_arr = np.abs(df["yaw_error"].to_numpy()) > TRACKING_HALF_FOV
+_dt_sim  = cfg["sim"]["dt"]
+_fov_dur = np.zeros(len(_oof_arr))
+_acc     = 0.0
+for _i, _oof in enumerate(_oof_arr):
+    _acc = (_acc + _dt_sim) if _oof else 0.0
+    _fov_dur[_i] = _acc
+df["fov_loss_duration"] = _fov_dur
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -350,7 +365,20 @@ ax_occ.axhline(TRACKING_FOV_DEG, color="green", linewidth=1.0, linestyle="--", z
 
 occ_line, = ax_occ.plot([], [], color="darkorange", linewidth=1.5,
                          label="occluded angle", zorder=3)
+
+# Red shading where target is outside tracking FOV (static, precomputed)
+ax_occ.fill_between(df["t"], 0, TRACKING_FOV_DEG * 1.05,
+                    where=_oof_arr, color="lightcoral", alpha=0.30, zorder=2,
+                    label="target out of FoV")
 ax_occ.legend(fontsize=8)
+
+# Animated text overlay while target is out of FOV
+fov_loss_text = ax_occ.text(
+    0.98, 0.97, "", transform=ax_occ.transAxes,
+    ha="right", va="top", fontsize=9, fontweight="bold",
+    color="darkred", bbox=dict(facecolor="mistyrose", edgecolor="red",
+                               alpha=0.85, boxstyle="round,pad=0.3"),
+    zorder=10, animated=True, visible=False)
 
 # ── Panel (3,1): Deadlock angle timeline ─────────────────────────────────────
 
@@ -387,13 +415,14 @@ _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                deadlock_angle_line)
 
 _anim_patches = tuple(obs_patches) + (fov_wedge,)
-_animated     = _anim_lines + _anim_patches + (yaw_arrow, deadlock_text)
+_animated     = _anim_lines + _anim_patches + (yaw_arrow, deadlock_text, fov_loss_text)
 
 def init():
     for line in _anim_lines:
         line.set_data([], [])
     yaw_arrow.set_UVC(0, 0)
     deadlock_text.set_visible(False)
+    fov_loss_text.set_visible(False)
     return _animated
 
 def update(frame):
@@ -452,6 +481,12 @@ def update(frame):
 
     # (3,0) Occlusion
     occ_line.set_data(t, sub["occlusion_deg"])
+    if bool(np.abs(sub["yaw_error"].iloc[-1]) > TRACKING_HALF_FOV):
+        dur = sub["fov_loss_duration"].iloc[-1]
+        fov_loss_text.set_text(f"TARGET OUT OF FoV\n{dur:.1f}s")
+        fov_loss_text.set_visible(True)
+    else:
+        fov_loss_text.set_visible(False)
 
     # (3,1) Deadlock avoidance
     if has_deadlock:
