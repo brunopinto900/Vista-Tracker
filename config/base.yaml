@@ -12,8 +12,11 @@ sim:
   dt: 0.05              # timestep — same for all scenarios
 
 camera:
-  fov:   360.0           # horizontal field of view (degrees) — omnidirectional
+  fov:   360.0           # horizontal field of view (degrees) — omnidirectional obstacle sensing
   range:   8.0           # sensing/detection range (metres)
+
+tracking_camera:
+  fov:    60.0           # horizontal field of view (degrees) — tracking camera (±30°)
 
 estimator:
   horizon:      10

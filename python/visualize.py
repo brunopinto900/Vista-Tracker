@@ -9,8 +9,8 @@ Panels:
   [1,1]  Body rates: controller commands vs actual plant response
   [2,0]  Velocities: drone state vs target (reference)
   [2,1]  Roll & pitch: attitude setpoints vs state
-  [3,0]  Occlusion metric  (placeholder)
-  [3,1]  Reserved          (placeholder)
+  [3,0]  FOV occlusion by obstacles (angular, deg)
+  [3,1]  Deadlock avoidance viewpoint angle
 
 Static reference signals are pre-plotted for the full horizon.
 Animated state signals grow frame-by-frame.
@@ -59,11 +59,12 @@ cfg = load_config(sys.argv[1] if len(sys.argv) > 1 else _default_cfg)
 
 obstacles        = cfg.get("world", {}).get("obstacles", [])
 grid             = cfg.get("world", {}).get("grid", {})
-DESIRED_DISTANCE = cfg["controller"]["desired_distance"]
-ATT_KP           = cfg["controller"]["attitude_kp"]
-FOV_DEG          = cfg.get("camera", {}).get("fov", 360.0)
-HALF_FOV         = np.radians(FOV_DEG / 2.0)
-CAMERA_RANGE     = cfg.get("camera", {}).get("range", 6.0)
+DESIRED_DISTANCE    = cfg["controller"]["desired_distance"]
+ATT_KP              = cfg["controller"]["attitude_kp"]
+FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)          # omnidirectional sensing
+CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
+TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)  # tracking camera
+TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -95,6 +96,38 @@ has_body_rates  = "drone_wx" in df.columns
 has_vel_ref     = "vel_ref_x" in df.columns
 has_ref_pos     = "ref_x" in df.columns
 has_deadlock    = "deadlock_active" in df.columns
+
+# ── Occlusion metric (eq. 4.28–4.29) ─────────────────────────────────────────
+# d   = min distance from each obstacle centre O to the LOS segment P→T
+# θocc = θFOV · max(0, 1 − d / dFOV)
+# dFOV = 4 m (standoff distance = max range at which obstacle fully blocks LOS)
+
+D_FOV = DESIRED_DISTANCE  # 4 m — normalisation distance from thesis eq. 4.29
+
+def _los_point_dist(ox, oy, px, py, tx, ty):
+    """Minimum distance from point O to segment P→T (vectorised over rows)."""
+    dx, dy   = tx - px, ty - py
+    len_sq   = dx*dx + dy*dy
+    # scalar guard for zero-length segment
+    safe     = np.where(len_sq < 1e-12, 1.0, len_sq)
+    t        = np.clip(((ox - px)*dx + (oy - py)*dy) / safe, 0.0, 1.0)
+    return np.hypot(ox - (px + t*dx), oy - (py + t*dy))
+
+def _compute_occlusion_deg(drone_x, drone_y, target_x, target_y, obs_list, fov_deg, d_fov):
+    if not obs_list:
+        return np.zeros(len(drone_x))
+    # Distance from each obstacle centre to the LOS segment for all timesteps
+    dists = np.stack([
+        _los_point_dist(obs["x"], obs["y"], drone_x, drone_y, target_x, target_y)
+        for obs in obs_list
+    ])  # shape (n_obs, n_steps)
+    d_min = dists.min(axis=0)  # closest obstacle to LOS at each step
+    return fov_deg * np.maximum(0.0, 1.0 - d_min / d_fov)
+
+df["occlusion_deg"] = _compute_occlusion_deg(
+    df["drone_x"].to_numpy(), df["drone_y"].to_numpy(),
+    df["target_x"].to_numpy(), df["target_y"].to_numpy(),
+    obstacles, TRACKING_FOV_DEG, D_FOV)
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -133,13 +166,17 @@ ax_traj.set_xlim(GRID_X_MIN, GRID_X_MAX)
 ax_traj.set_ylim(GRID_Y_MIN, GRID_Y_MAX)
 ax_traj.set_aspect("equal"); ax_traj.grid(True, zorder=0)
 
-# Sensing range circle — animated, drawn below obstacles
-sensing_circle = patches.Circle(
-    (df["drone_x"].iloc[0], df["drone_y"].iloc[0]), CAMERA_RANGE,
-    facecolor="lightgreen", alpha=0.18, edgecolor="green",
+# Tracking FOV cone — animated wedge, ±TRACKING_HALF_FOV around drone yaw
+_yaw0 = df["drone_yaw"].iloc[0]
+fov_wedge = patches.Wedge(
+    (df["drone_x"].iloc[0], df["drone_y"].iloc[0]),
+    CAMERA_RANGE,
+    np.degrees(_yaw0 - TRACKING_HALF_FOV),
+    np.degrees(_yaw0 + TRACKING_HALF_FOV),
+    facecolor="lightgreen", alpha=0.22, edgecolor="green",
     linewidth=1, linestyle="--", zorder=1, animated=True,
-    label=f"Camera {CAMERA_RANGE:.0f}m range")
-ax_traj.add_patch(sensing_circle)
+    label=f"Tracking FoV {TRACKING_FOV_DEG:.0f}°")
+ax_traj.add_patch(fov_wedge)
 
 # Obstacles start grey (unknown); coloured when inside camera range
 obs_patches = []
@@ -203,18 +240,18 @@ error_line, = ax_err.plot([], [], "r-", linewidth=1.5)
 
 # ── Panel (1,0): Yaw — reference, state, and heading error ───────────────────
 
-ax_yaw.set_title(f"Yaw  (FoV = {FOV_DEG:.0f}°, target in FoV if |error| < {FOV_DEG/2:.0f}°)")
+ax_yaw.set_title(f"Yaw  (tracking FoV = {TRACKING_FOV_DEG:.0f}°, target in FoV if |error| < {TRACKING_FOV_DEG/2:.0f}°)")
 ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Angle / Error [rad]")
 ax_yaw.set_xlim(0, tmax)
 ax_yaw.set_ylim(*_ylim(df["yaw_error"], df["ref_yaw"], df["drone_yaw"], pad=0.2))
 ax_yaw.grid(True)
 
-# ±half-FoV acceptance band centred on zero (error interpretation)
-ax_yaw.fill_between([0, tmax], -HALF_FOV, HALF_FOV,
+# ±half tracking-FoV acceptance band centred on zero (error interpretation)
+ax_yaw.fill_between([0, tmax], -TRACKING_HALF_FOV, TRACKING_HALF_FOV,
                     color="green", alpha=0.10, zorder=1)
-ax_yaw.axhline( HALF_FOV, color="green", linewidth=1.0, linestyle=":",
-               label=f"±{FOV_DEG/2:.0f}° FoV boundary", zorder=2)
-ax_yaw.axhline(-HALF_FOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
+ax_yaw.axhline( TRACKING_HALF_FOV, color="green", linewidth=1.0, linestyle=":",
+               label=f"±{TRACKING_FOV_DEG/2:.0f}° tracking FoV", zorder=2)
+ax_yaw.axhline(-TRACKING_HALF_FOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
 
 # Static yaw reference (full horizon) — dashed, matches setpoint convention elsewhere
 ax_yaw.plot(df["t"], df["ref_yaw"], color="orange", linewidth=1.0,
@@ -299,8 +336,21 @@ ax_att.legend(fontsize=8)
 
 # ── Panel (3,0): Occlusion ────────────────────────────────────────────────────
 
-_placeholder(ax_occ, "Occlusion metric\n(TBD)")
-ax_occ.set_title("Occlusion")
+ax_occ.set_title(f"LOS Occlusion  (tracking FoV = {TRACKING_FOV_DEG:.0f}°)")
+ax_occ.set_xlabel("Time [s]"); ax_occ.set_ylabel("Occluded angle [deg]")
+ax_occ.set_xlim(0, tmax)
+ax_occ.set_ylim(0, TRACKING_FOV_DEG * 1.05)
+ax_occ.grid(True, zorder=0)
+
+# Light green fill representing the full tracking FOV (±30°)
+ax_occ.fill_between([0, tmax], 0, TRACKING_FOV_DEG,
+                    color="lightgreen", alpha=0.25, zorder=1,
+                    label=f"tracking FoV ±{TRACKING_FOV_DEG/2:.0f}°")
+ax_occ.axhline(TRACKING_FOV_DEG, color="green", linewidth=1.0, linestyle="--", zorder=2)
+
+occ_line, = ax_occ.plot([], [], color="darkorange", linewidth=1.5,
+                         label="occluded angle", zorder=3)
+ax_occ.legend(fontsize=8)
 
 # ── Panel (3,1): Deadlock angle timeline ─────────────────────────────────────
 
@@ -333,9 +383,10 @@ _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                wx_line, wy_line, wz_line,
                drone_vx_line, drone_vy_line,
                roll_line, pitch_line,
+               occ_line,
                deadlock_angle_line)
 
-_anim_patches = tuple(obs_patches) + (sensing_circle,)
+_anim_patches = tuple(obs_patches) + (fov_wedge,)
 _animated     = _anim_lines + _anim_patches + (yaw_arrow, deadlock_text)
 
 def init():
@@ -365,8 +416,10 @@ def update(frame):
     yaw_arrow.set_offsets([[dx, dy]])
     yaw_arrow.set_UVC(ARROW_LEN * np.cos(yaw), ARROW_LEN * np.sin(yaw))
 
-    # Camera sensing range circle
-    sensing_circle.set_center((dx, dy))
+    # Tracking FOV cone
+    fov_wedge.set_center((dx, dy))
+    fov_wedge.set_theta1(np.degrees(yaw - TRACKING_HALF_FOV))
+    fov_wedge.set_theta2(np.degrees(yaw + TRACKING_HALF_FOV))
 
     # Obstacles: coloured when within camera range, grey otherwise
     for patch, obs in zip(obs_patches, obstacles):
@@ -396,6 +449,9 @@ def update(frame):
     # (2,1) Roll & Pitch
     roll_line.set_data(t,  sub["drone_roll"])
     pitch_line.set_data(t, sub["drone_pitch"])
+
+    # (3,0) Occlusion
+    occ_line.set_data(t, sub["occlusion_deg"])
 
     # (3,1) Deadlock avoidance
     if has_deadlock:
