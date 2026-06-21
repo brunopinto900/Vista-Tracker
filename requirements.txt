@@ -1,1 +1,2 @@
 sudo apt install libyaml-cpp-dev
+pip3 install pyvista
