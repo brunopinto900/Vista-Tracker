@@ -10,7 +10,13 @@ TargetEstimate PerfectEstimator::update(const Detection& det, double dt)
     s.y = det.v;
     s.z = det.z;
 
-    if (dt > 0.0 && prev_valid_)
+    if (det.has_velocity)
+    {
+        s.vx = det.vx;
+        s.vy = det.vy;
+        s.vz = det.vz;
+    }
+    else if (dt > 0.0 && prev_valid_)
     {
         s.vx = (det.u - prev_.x) / dt;
         s.vy = (det.v - prev_.y) / dt;

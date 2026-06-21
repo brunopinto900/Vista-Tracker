@@ -16,7 +16,10 @@ WaypointFollower::WaypointFollower(const TargetTrajectory& traj,
 TargetState WaypointFollower::step(double dt)
 {
     if (done_ || traj_.waypoints.empty())
+    {
+        state_.vx = state_.vy = state_.vz = 0.0;
         return state_;
+    }
 
     const Waypoint& wp = traj_.waypoints[idx_];
 
@@ -43,6 +46,7 @@ TargetState WaypointFollower::step(double dt)
 
     if (dist < kReachThreshold)
     {
+        state_.vx = state_.vy = state_.vz = 0.0;
         if (wp.hold > 0.0)
             holding_ = true;
         else
