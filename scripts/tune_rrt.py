@@ -21,9 +21,6 @@ Cost per evaluation (N_QUERIES × N_SEEDS runs):
                                      is not collision-free
   W_REPLAN * replan_interval_cost  — penalises replan intervals outside [1, 6] s
                                      (derived from replan_goal_dist / target speed)
-  W_ITER   * iter_cost             — favours smaller iteration budgets
-                                     (normalised to MAX_ITER_REF)
-
 replan_goal_dist optimal value depends on target speed — available in the
 scenario config, so including it here avoids a separate tuning step.
 
@@ -53,13 +50,10 @@ W_FAIL         = 10.0   # failure-rate weight
 W_EFF          =  1.0   # path-efficiency weight
 W_CORNER       =  8.0   # corner-unsafety weight (nearly as bad as total failure)
 W_REPLAN       =  2.0   # replan-interval weight
-W_ITER         =  0.3   # iteration-budget weight (favours faster plans)
 REPLAN_MIN_S   =  1.0   # ideal minimum replan interval (s)
 REPLAN_MAX_S   =  6.0   # ideal maximum replan interval (s)
 MIN_MARGIN     =  0.15  # hard floor on safety_margin (m)
-MIN_ITER       =  200   # hard floor on max_iter
-MAX_ITER_CAP   = 6000   # hard ceiling on max_iter during tuning
-MAX_ITER_REF   = 4000   # normalisation reference for iter cost (deployment default)
+MAX_ITER       = 4000   # fixed iteration budget per plan call (matches deployment default)
 EDGE_CHECK_RES =  0.1   # fixed collision-check resolution along edge (m)
 GOAL_TOL       =  0.5   # fixed goal-reached radius (m)
 MIN_QUERY_DIST =  5.0   # minimum start–goal separation (m)
@@ -254,11 +248,9 @@ _wp_reach_thresh:  float = 0.8   # fixed — not optimised
 
 
 def _cost(params: np.ndarray) -> float:
-    step_size, goal_bias, safety_margin, replan_goal_dist, max_iter_f = (
+    step_size, goal_bias, safety_margin, replan_goal_dist = (
         float(params[0]), float(params[1]), float(params[2]),
-        float(params[3]), float(params[4]))
-
-    max_iter = max(MIN_ITER, min(MAX_ITER_CAP, int(round(max_iter_f))))
+        float(params[3]))
 
     # Hard bounds
     if step_size        <  0.05:                    return 1e6
@@ -282,8 +274,7 @@ def _cost(params: np.ndarray) -> float:
             path, _ = _rrt_plan(
                 start, goal, _obstacles,
                 step_size, goal_bias, safety_margin,
-                x_min, x_max, y_min, y_max, rng,
-                max_iter=max_iter)
+                x_min, x_max, y_min, y_max, rng)
 
             n_total += 1
             if path is None:
@@ -299,13 +290,11 @@ def _cost(params: np.ndarray) -> float:
     mean_eff           = float(np.mean(efficiencies)) if efficiencies else 3.0
     corner_unsafe_rate = corner_unsafe / corner_total if corner_total > 0 else 1.0
     replan_c           = _replan_cost(replan_goal_dist, _target_speed)
-    iter_cost          = max_iter / MAX_ITER_REF
 
     return (W_FAIL   * failure_rate
           + W_EFF    * mean_eff
           + W_CORNER * corner_unsafe_rate
-          + W_REPLAN * replan_c
-          + W_ITER   * iter_cost)
+          + W_REPLAN * replan_c)
 
 
 # ── Query generation ──────────────────────────────────────────────────────────
@@ -339,9 +328,8 @@ def _plot(scenario_name: str, x0: np.ndarray, x_opt: np.ndarray) -> None:
         (x0,    "Initial params"),
         (x_opt, "Optimised params"),
     ]):
-        step, bias, margin, replan, max_iter_f = [float(p) for p in params]
-        max_iter = max(MIN_ITER, min(MAX_ITER_CAP, int(round(max_iter_f))))
-        thresh   = _wp_reach_thresh
+        step, bias, margin, replan = [float(p) for p in params]
+        thresh = _wp_reach_thresh
         ax = axes[col]
         ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
         ax.set_aspect("equal"); ax.grid(True, alpha=0.4)
@@ -362,8 +350,7 @@ def _plot(scenario_name: str, x0: np.ndarray, x_opt: np.ndarray) -> None:
             path, _ = _rrt_plan(
                 start, goal, _obstacles,
                 step, bias, margin,
-                x_min, x_max, y_min, y_max, rng,
-                max_iter=max_iter)
+                x_min, x_max, y_min, y_max, rng)
             c = colors[i]
             ax.plot(*start, "o", color=c, markersize=6, zorder=5)
             ax.plot(*goal,  "s", color=c, markersize=6, zorder=5)
@@ -386,7 +373,7 @@ def _plot(scenario_name: str, x0: np.ndarray, x_opt: np.ndarray) -> None:
             f"{label}\n"
             f"step={step:.3f}  bias={bias:.3f}  margin={margin:.3f}\n"
             f"wp_thresh={thresh:.3f}(fixed)  replan={replan:.2f}m "
-            f"(≈{interval:.1f}s @ {_target_speed:.1f}m/s)  max_iter={max_iter}\n"
+            f"(≈{interval:.1f}s @ {_target_speed:.1f}m/s)\n"
             f"{successes}/{n_show} paths found  |  {unsafe} unsafe corners"
         )
 
@@ -426,7 +413,6 @@ def main() -> None:
         rcfg.get("goal_bias",              0.10),
         rcfg.get("safety_margin",          0.30),
         pcfg.get("replan_goal_dist",       4.0),
-        float(rcfg.get("max_iter",         MAX_ITER_REF)),
     ])
 
     print(f"[tune_rrt] scenario       : {cfg_path}")
@@ -437,7 +423,7 @@ def main() -> None:
           f"{N_QUERIES * N_SEEDS} runs/eval")
     print(f"[tune_rrt] wp_reach_thresh: {_wp_reach_thresh:.3f}  m  (fixed)")
     print(f"[tune_rrt] initial params : step={x0[0]:.3f}  bias={x0[1]:.3f}  "
-          f"margin={x0[2]:.3f}  replan={x0[3]:.2f}  max_iter={int(x0[4])}")
+          f"margin={x0[2]:.3f}  replan={x0[3]:.2f}")
 
     print("\nGenerating query pairs …")
     _queries = _generate_queries(_obstacles, x_min, x_max, y_min, y_max)
@@ -446,7 +432,7 @@ def main() -> None:
     c0 = _cost(x0)
     print(f"\nInitial cost : {c0:.4f}")
     print(f"  breakdown  : failure×{W_FAIL}  efficiency×{W_EFF}  "
-          f"corner×{W_CORNER}  replan×{W_REPLAN}  iter×{W_ITER}")
+          f"corner×{W_CORNER}  replan×{W_REPLAN}")
     print("Optimising (Nelder-Mead) …\n")
 
     result = minimize(
@@ -455,14 +441,12 @@ def main() -> None:
         options={"maxiter": 500, "xatol": 1e-3, "fatol": 1e-3, "disp": True},
     )
 
-    step_size, goal_bias, safety_margin, replan_goal_dist, max_iter_f = (
+    step_size, goal_bias, safety_margin, replan_goal_dist = (
         max(0.05,       float(result.x[0])),
         float(np.clip(  result.x[1], 0.01, 0.99)),
         max(MIN_MARGIN, float(result.x[2])),
         max(0.1,        float(result.x[3])),
-        float(result.x[4]),
     )
-    max_iter = max(MIN_ITER, min(MAX_ITER_CAP, int(round(max_iter_f))))
     interval = replan_goal_dist / max(_target_speed, 0.1)
 
     print(f"\n── Optimised parameters ─────────────────────────────────────────")
@@ -472,7 +456,6 @@ def main() -> None:
     print(f"  wp_reach_thresh  : {_wp_reach_thresh:.3f}  m  (fixed)")
     print(f"  replan_goal_dist : {replan_goal_dist:.3f}  m  "
           f"(≈ {interval:.1f} s at {_target_speed} m/s)")
-    print(f"  max_iter         : {max_iter}")
     print(f"  cost             : {result.fun:.4f}  (initial: {c0:.4f})")
 
     print(f"\n── Paste into your scenario / base.yaml ──────────────────────────")
@@ -482,12 +465,10 @@ def main() -> None:
     print(f"    step_size:     {step_size:.3f}")
     print(f"    goal_bias:     {goal_bias:.3f}")
     print(f"    safety_margin: {safety_margin:.3f}")
-    print(f"    max_iter:      {max_iter}")
 
     if not args.no_plot:
         _plot(os.path.basename(cfg_path), x0,
-              np.array([step_size, goal_bias, safety_margin,
-                        replan_goal_dist, float(max_iter)]))
+              np.array([step_size, goal_bias, safety_margin, replan_goal_dist]))
 
 
 if __name__ == "__main__":
