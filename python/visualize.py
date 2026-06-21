@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import yaml
 from matplotlib.animation import FuncAnimation
+from matplotlib.gridspec import GridSpec
 
 # ── Load log ──────────────────────────────────────────────────────────────────
 
@@ -163,15 +164,36 @@ def _placeholder(ax, label):
         spine.set_linestyle("--"); spine.set_edgecolor("#aaaaaa")
 
 # ── Figure layout ─────────────────────────────────────────────────────────────
+# 5 equal rows × 2 cols; XY spans rows 0–1 (left), right col has 5 uniform panels.
+#
+#  col 0 (left)       col 1 (right)
+#  ┌──────────────┐   ┌─────────────┐  row 0
+#  │              │   │     TBD     │
+#  │  2-D traj    │   ├─────────────┤  row 1
+#  │              │   │  dist error │
+#  ├──────────────┤   ├─────────────┤  row 2
+#  │     yaw      │   │  body rates │
+#  ├──────────────┤   ├─────────────┤  row 3
+#  │  velocities  │   │  roll/pitch │
+#  ├──────────────┤   ├─────────────┤  row 4
+#  │  occlusion   │   │   deadlock  │
+#  └──────────────┘   └─────────────┘
 
-fig, axs = plt.subplots(4, 2, figsize=(16, 20),
-                         gridspec_kw={"height_ratios": [1.4, 1, 1, 1]})
-fig.suptitle("Vista-Tracker — Simulation Dashboard", fontsize=13, y=0.995)
+fig = plt.figure(figsize=(16, 22))
+gs  = GridSpec(5, 2, figure=fig, hspace=0.38, wspace=0.28)
+fig.suptitle("Vista-Tracker — Simulation Dashboard", fontsize=13, y=0.998)
 
-ax_traj, ax_err   = axs[0]
-ax_yaw,  ax_rates = axs[1]
-ax_vel,  ax_att   = axs[2]
-ax_occ,  ax_other = axs[3]
+ax_traj  = fig.add_subplot(gs[0:2, 0])  # XY: spans rows 0–1 on the left
+ax_tbd   = fig.add_subplot(gs[0,   1])  # TBD placeholder (top-right)
+ax_err   = fig.add_subplot(gs[1,   1])  # Tracking distance error
+ax_yaw   = fig.add_subplot(gs[2,   0])  # Yaw
+ax_rates = fig.add_subplot(gs[2,   1])  # Body rates
+ax_vel   = fig.add_subplot(gs[3,   0])  # Velocities
+ax_att   = fig.add_subplot(gs[3,   1])  # Roll & pitch
+ax_occ   = fig.add_subplot(gs[4,   0])  # Occlusion
+ax_other = fig.add_subplot(gs[4,   1])  # Deadlock angle
+
+_placeholder(ax_tbd, "TBD")
 
 # ── Panel (0,0): 2-D Trajectory ───────────────────────────────────────────────
 

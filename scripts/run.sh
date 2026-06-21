@@ -56,6 +56,9 @@ else
 fi
 
 # ── Visualise ─────────────────────────────────────────────────────────────────
-echo "[run] launching visualizer..."
+echo "[run] launching visualizers..."
 cd "$ROOT/python"
+#env -u LIBGL_ALWAYS_INDIRECT LIBGL_ALWAYS_SOFTWARE=1 python3 visualize_3d.py "$CONFIG_ABS" &
+#PID_3D=$!
 python3 visualize.py "$CONFIG_ABS"
+#wait $PID_3D 2>/dev/null || true
