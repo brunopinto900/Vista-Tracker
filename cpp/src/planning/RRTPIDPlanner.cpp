@@ -16,9 +16,41 @@ std::array<double, 2> RRTPIDPlanner::computeGoal(
     double dy = drone.y - t.y;
     double d  = std::sqrt(dx * dx + dy * dy);
     if (d < 1e-6)
-        return {t.x + cfg_.standoff_dist, t.y};  // arbitrary offset when on top of target
+        return {t.x + cfg_.standoff_dist, t.y};
     double s = cfg_.standoff_dist / d;
     return {t.x + dx * s, t.y + dy * s};
+}
+
+// When the ideal standoff goal is inside an obstacle's safety margin, scan
+// alternate bearing angles (±5°, ±10°, …, ±180°) around the target until a
+// feasible position is found.  This lets the drone reposition to the side of
+// an obstacle rather than freezing whenever the target passes close to one.
+static std::array<double, 2> findFeasibleGoal(
+    const std::array<double, 2>& ideal,
+    const PredictedTargetState&  t,
+    double                       standoff,
+    double                       margin,
+    const IESDFMap&              esdf)
+{
+    if (esdf.query(ideal[0], ideal[1], 0.0) >= static_cast<float>(margin))
+        return ideal;
+
+    double base_angle = std::atan2(ideal[1] - t.y, ideal[0] - t.x);
+
+    // Try increasing angular offsets on both sides
+    for (int step = 1; step <= 36; ++step)
+    {
+        for (int sign : {1, -1})
+        {
+            double angle = base_angle + sign * step * (M_PI / 36.0);  // 5° increments
+            double gx = t.x + standoff * std::cos(angle);
+            double gy = t.y + standoff * std::sin(angle);
+            if (esdf.query(gx, gy, 0.0) >= static_cast<float>(margin))
+                return {gx, gy};
+        }
+    }
+
+    return ideal;  // give up — let RRT handle the infeasible goal
 }
 
 Reference RRTPIDPlanner::update(
@@ -28,18 +60,83 @@ Reference RRTPIDPlanner::update(
 {
     const auto& t = target.horizon[0];
 
-    auto goal = computeGoal(drone, target);
+    auto ideal_goal = computeGoal(drone, target);
 
-    // Replan when goal drifted, path is exhausted, or first call
-    double goal_drift = std::sqrt(
-        std::pow(goal[0] - last_goal_[0], 2) +
-        std::pow(goal[1] - last_goal_[1], 2));
+    // When the ideal standoff is inside an obstacle, find the nearest feasible
+    // standoff by scanning alternate bearing angles.  This prevents planning
+    // toward an infeasible goal and avoids permanent hold-in-place.
+    auto goal = findFeasibleGoal(
+        ideal_goal, t, cfg_.standoff_dist, cfg_.rrt.safety_margin, esdf);
 
-    if (path_.empty() || wp_idx_ >= path_.size() || goal_drift > cfg_.replan_goal_dist)
+    const bool ideal_feasible = (esdf.query(ideal_goal[0], ideal_goal[1], 0.0) >=
+                                  static_cast<float>(cfg_.rrt.safety_margin));
+
+    double goal_drift = last_goal_valid_
+        ? std::sqrt(std::pow(goal[0] - last_goal_[0], 2) +
+                    std::pow(goal[1] - last_goal_[1], 2))
+        : 1e9;  // force first replan
+
+    // Replan when:
+    //   - no path exists (first call)
+    //   - last RRT call failed (retry each cycle until success)
+    //   - goal has drifted far enough from the last non-trivial plan anchor
+    // Path consumption alone does NOT trigger replan — at standoff the path is
+    // consumed instantly, which would pin last_goal_ and prevent drift from
+    // accumulating for the next obstacle-routing replan.
+    if (path_.empty() || goal_drift > cfg_.replan_goal_dist || rrt_failed_)
     {
-        path_      = rrt_.plan({drone.x, drone.y}, goal, esdf);
-        wp_idx_    = 0;
-        last_goal_ = goal;
+        // If the drone is inside the safety-margin zone (e.g. it tracked to a
+        // tight standoff right against an obstacle face), RRT cannot grow from
+        // that start — every edge begins in the infeasible region and is
+        // rejected.  Find the nearest feasible point and use it as the RRT
+        // start, then prepend the drone's actual position so the sequencer
+        // bridges the gap naturally.
+        std::array<double, 2> rrt_start{drone.x, drone.y};
+        if (esdf.query(drone.x, drone.y, 0.0) < static_cast<float>(cfg_.rrt.safety_margin))
+        {
+            bool found = false;
+            for (double r = cfg_.rrt.edge_check_res; r <= 3.0 && !found; r += cfg_.rrt.edge_check_res)
+            {
+                for (int ang = 0; ang < 72 && !found; ++ang)
+                {
+                    double theta = ang * (M_PI / 36.0);
+                    double tx = drone.x + r * std::cos(theta);
+                    double ty = drone.y + r * std::sin(theta);
+                    if (esdf.query(tx, ty, 0.0) >= static_cast<float>(cfg_.rrt.safety_margin))
+                    {
+                        rrt_start = {tx, ty};
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        auto new_path = rrt_.plan(rrt_start, goal, esdf);
+        // Prepend drone's actual position so the path begins where the drone is
+        if (!new_path.empty() && (rrt_start[0] != drone.x || rrt_start[1] != drone.y))
+            new_path.insert(new_path.begin(), {drone.x, drone.y});
+        if (!new_path.empty())
+        {
+            path_       = std::move(new_path);
+            wp_idx_     = 0;
+            rrt_failed_ = false;
+            // Anchor last_goal_ only for non-trivial paths (> 2 nodes = [start, goal]).
+            // Trivial paths mean the drone is already at standoff; keeping the anchor
+            // fixed lets drift accumulate so a real obstacle-routing replan fires when
+            // the target has moved far enough.
+            if (path_.size() > 2)
+            {
+                last_goal_       = goal;
+                last_goal_valid_ = true;
+            }
+        }
+        else
+        {
+            // RRT failed — keep existing path so the drone continues on the last
+            // valid obstacle-free route.  If there is no prior path, the reference
+            // block below holds position.
+            rrt_failed_ = true;
+        }
     }
 
     // Sequencer: skip waypoints the drone has already reached
@@ -53,21 +150,43 @@ Reference RRTPIDPlanner::update(
     }
 
     Reference ref;
+    ref.z   = cfg_.z_ref;
+    ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);
+
     if (!path_.empty() && wp_idx_ < path_.size())
     {
-        ref.x = path_[wp_idx_][0];
-        ref.y = path_[wp_idx_][1];
+        // Following a valid RRT path
+        ref.x  = path_[wp_idx_][0];
+        ref.y  = path_[wp_idx_][1];
+        ref.vx = t.vx;
+        ref.vy = t.vy;
+    }
+    else if (!rrt_failed_ && ideal_feasible)
+    {
+        // Path consumed and ideal standoff is in free space — direct tracking.
+        ref.x  = ideal_goal[0];
+        ref.y  = ideal_goal[1];
+        ref.vx = t.vx;
+        ref.vy = t.vy;
+    }
+    else if (!rrt_failed_)
+    {
+        // Path consumed but ideal standoff is blocked (target near obstacle).
+        // Track the nearest feasible standoff instead.
+        ref.x  = goal[0];
+        ref.y  = goal[1];
+        ref.vx = 0.0;  // no feedforward when goal is an angle-shifted proxy
+        ref.vy = 0.0;
     }
     else
     {
-        // RRT failed or path fully consumed — fall back to direct goal
-        ref.x = goal[0];
-        ref.y = goal[1];
+        // RRT failed — hold position and zero feedforward so the drone does not
+        // fly through obstacles toward the direct standoff goal.
+        ref.x  = drone.x;
+        ref.y  = drone.y;
+        ref.vx = 0.0;
+        ref.vy = 0.0;
     }
-    ref.z   = cfg_.z_ref;
-    ref.vx  = t.vx;  // target velocity feedforward — reduces standoff lag at speed
-    ref.vy  = t.vy;
-    ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);  // always face target
 
     // Populate trajectory for future MPC consumer
     ref.trajectory.clear();

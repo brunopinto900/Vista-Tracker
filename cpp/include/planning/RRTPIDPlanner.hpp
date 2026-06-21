@@ -46,6 +46,8 @@ private:
     RRT    rrt_;
 
     std::vector<std::array<double, 2>> path_;
-    std::size_t                        wp_idx_    = 0;
-    std::array<double, 2>              last_goal_ = {1e18, 1e18};
+    std::size_t                        wp_idx_          = 0;
+    std::array<double, 2>              last_goal_       = {0.0, 0.0};
+    bool                               last_goal_valid_ = false;
+    bool                               rrt_failed_      = false;
 };

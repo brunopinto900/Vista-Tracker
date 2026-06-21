@@ -23,7 +23,11 @@ bool RRT::edgeClear(const Node& a, const Node& b, const IESDFMap& esdf) const
     double dx = b.x - a.x, dy = b.y - a.y;
     double d  = std::sqrt(dx * dx + dy * dy);
     int steps = std::max(1, static_cast<int>(std::ceil(d / cfg_.edge_check_res)));
-    for (int i = 0; i <= steps; ++i)
+    // Start from i=1 — parent node a is already in the tree and may be in the
+    // safety-margin zone (e.g. the drone's starting position when it arrived
+    // tightly near an obstacle).  Re-checking a would always fail and block
+    // the tree from growing at all.
+    for (int i = 1; i <= steps; ++i)
     {
         double t = static_cast<double>(i) / steps;
         if (esdf.query(a.x + t * dx, a.y + t * dy, 0.0) < cfg_.safety_margin)
@@ -37,6 +41,18 @@ std::vector<std::array<double, 2>> RRT::plan(
     std::array<double, 2> goal,
     const IESDFMap&       esdf)
 {
+    // If start is already within goal tolerance AND the direct line is collision-free,
+    // return a trivial path immediately (avoids running max_iter steps needlessly).
+    // When the line is blocked the full search runs — it may find a near-goal node
+    // via a detour even if the exact goal point is infeasible.
+    if (dist2(start[0], start[1], goal[0], goal[1]) <= cfg_.goal_tol)
+    {
+        Node sn{start[0], start[1], -1}, gn{goal[0], goal[1], -1};
+        if (esdf.query(goal[0], goal[1], 0.0) >= cfg_.safety_margin && edgeClear(sn, gn, esdf))
+            return {{start[0], start[1]}, {goal[0], goal[1]}};
+        // else: direct path blocked — fall through to full search
+    }
+
     std::vector<Node> nodes;
     nodes.reserve(static_cast<size_t>(cfg_.max_iter));
     nodes.push_back({start[0], start[1], -1});

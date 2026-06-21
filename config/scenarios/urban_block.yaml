@@ -72,12 +72,12 @@ world:
 
 planner:
   standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
-  wp_reach_thresh:  0.528
-  replan_goal_dist: 3.738
-  rrrt:
-    step_size:     0.796
+  wp_reach_thresh:  0.8    # advance before fully decelerating to prevent stop-and-go
+  replan_goal_dist: 1.5    # replan more frequently so ref jumps stay small
+  rrt:
+    step_size:     0.8
     goal_bias:     0.103
-    safety_margin: 0.308
+    safety_margin: 0.5     # wider clearance to absorb tracking error during acceleration
     edge_check_res: 0.1    # collision-check sample spacing along edge (m)
     max_iter:       4000   # RRT iteration budget per replan call
     goal_tol:       0.5    # goal-reached radius (m)
