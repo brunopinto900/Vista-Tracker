@@ -69,6 +69,7 @@ int main(int argc, char* argv[])
               << "[config] estimator       horizon=" << cfg.estimator.horizon
               << " motion_model=" << cfg.estimator.motion_model << "\n"
               << "[config] controller      kp_pos=" << cfg.controller.kp_pos
+              << " ki_pos=" << cfg.controller.ki_pos
               << " kp_vel=" << cfg.controller.kp_vel
               << " ki_vel=" << cfg.controller.ki_vel
               << " desired_distance=" << cfg.controller.desired_distance << "\n"
@@ -115,6 +116,7 @@ int main(int argc, char* argv[])
 
     RRTPIDPlanner         planner(planner_cfg);
     PIDController         controller(cfg.controller.kp_pos,
+                                     cfg.controller.ki_pos,
                                      cfg.controller.kp_vel,
                                      cfg.controller.ki_vel,
                                      cfg.controller.attitude_kp,

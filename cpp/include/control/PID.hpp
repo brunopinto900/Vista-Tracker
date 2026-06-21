@@ -1,17 +1,24 @@
 #pragma once
 
-// Position-error integrating PID (kp + ki only).
-// Velocity damping is handled separately in PIDController via kv * drone_vel,
-// which avoids numerical-derivative noise from kd * d(error)/dt.
+#include <algorithm>
+
+// Velocity-error PID (kp + ki).  Anti-windup clamps ki contribution to
+// ±kMaxContrib to prevent accumulation during large transients.
 class PID
 {
 public:
+    static constexpr double kMaxContrib = 4.0;  // max m/s² from integral
+
     PID(double kp, double ki)
         : kp_(kp), ki_(ki), integral_(0.0) {}
 
     double update(double error, double dt)
     {
         integral_ += error * dt;
+        if (ki_ > 1e-9) {
+            const double lim = kMaxContrib / ki_;
+            integral_ = std::clamp(integral_, -lim, lim);
+        }
         return kp_ * error + ki_ * integral_;
     }
 

@@ -5,8 +5,17 @@ Scenario-based PX4-style cascade PID tuner for Vista-Tracker.
 Reads a scenario YAML and optimises PID gains against the actual target
 trajectory using a position-velocity cascade:
 
-  Outer loop (position P):   vel_sp = kp_pos * pos_err + target_vel  (feedforward)
+  Outer loop (position PI):  vel_sp = kp_pos * pos_err + ki_pos * ∫pos_err
   Inner loop (velocity PID): accel  = kp_vel * vel_err + ki_vel * ∫vel_err
+
+The reference position is computed online from the drone's current position,
+mirroring RRTPIDPlanner::computeGoal() exactly:
+  ref = target + (drone - target) * desired_dist / dist(drone, target)
+
+Velocity feedforward is intentionally omitted (FF_SCALE = 0) to simulate
+worst-case planner lag (discrete waypoints carry no velocity info).  This
+forces the optimizer to find non-zero integral gains that eliminate the
+≈ V/kp_pos steady-state position error observed without them.
 
 No planner is used. The drone starts at the initial standoff position.
 Cost is accumulated only after SETTLE_T seconds (let yaw and integrators settle).
@@ -35,12 +44,26 @@ from scipy.optimize import Bounds, minimize
 G = 9.81  # m/s²
 
 # ── Tuning constants ──────────────────────────────────────────────────────────
-SMOOTHING    = 0.10   # control-effort penalty weight
-SETTLE_T     = 2.0    # seconds excluded from cost (initial yaw + integrator settling)
+SMOOTHING    = 0.10   # control-effort penalty weight (angular-rate effort)
+GAIN_REG     = 2.00   # gain-regularisation weight — penalises large PI gains to
+                      # create an interior optimum; targets ki_pos ≈ 0.5-1.2 (near
+                      # critically damped with kp_pos ≈ 2 → ζ = kp_pos/(2√ki_pos))
+SETTLE_T     = 3.0    # seconds excluded from cost (initial yaw + integrator settling)
 OPT_DURATION = 25.0   # optimisation window (s) — full scenario used for plot only
 N_INNER      = 50     # inner sub-steps per outer dt for 2nd-order dynamics
-MAX_ANGLE    = 0.5    # rad tilt limit
-MAX_THRUST   = 2.0    # normalised
+MAX_ANGLE      = 0.5   # rad tilt limit
+MAX_THRUST     = 2.0   # normalised
+MAX_IPOS_CONT  = 1.0   # max m/s contribution from position integral (anti-windup)
+MAX_IVEL_CONT  = 4.0   # max m/s² contribution from velocity integral (anti-windup)
+
+# Velocity feedforward scale.  Models the reduced effective feedforward that
+# arises from the RRT planner's replan hysteresis: static waypoints consume
+# the feedforward before it can do its job, so the drone must integrate its
+# way out of the residual SS error.  0.5 = 50% effective feedforward, which
+# creates a ≈ 0.5*target_speed/kp_pos SS position error that ki_pos must
+# eliminate.  The real system retains full feedforward, so ki_pos acts
+# conservatively there (integral stays near zero when ex ≈ 0 at full FF).
+FF_SCALE = 0.5
 
 # ── Config loading ────────────────────────────────────────────────────────────
 
@@ -169,25 +192,28 @@ def _simulate_target(wps: list, traj: dict, dt: float, n: int):
     return tx, ty, tz, tvx, tvy
 
 
-# ── Cascade PID simulation ────────────────────────────────────────────────────
+# ── Cascade PI/PID simulation ─────────────────────────────────────────────────
 
 def simulate(
     gains: np.ndarray,
-    ref_xa: np.ndarray, ref_ya: np.ndarray,
-    ref_vxa: np.ndarray, ref_vya: np.ndarray,
     tx: np.ndarray, ty: np.ndarray,
+    tvx: np.ndarray, tvy: np.ndarray,
     init_x: float, init_y: float,
-    z_ref: float, dt: float,
+    z_ref: float, desired_dist: float, dt: float,
     wn: float, zeta: float, wn_yaw: float, zeta_yaw: float,
 ) -> dict:
     """
-    Simulate PX4-style cascade tracking pre-computed reference arrays.
-    ref_xa/ref_ya  = target(t) + fixed_init_dir * desired_dist (state-independent)
-    ref_vxa/ref_vya = target velocity (feedforward into velocity setpoint)
-    tx/ty are target positions (used only for yaw computation).
+    Simulate cascade tracking with online standoff-reference computation.
+
+    Reference mirrors RRTPIDPlanner::computeGoal():
+        ref = target + (drone - target) * desired_dist / dist(drone, target)
+
+    Velocity feedforward is scaled by FF_SCALE (0 = none, models planner lag).
+
+    gains = [kp_pos, ki_pos, kp_vel, ki_vel, att_kp, yaw_kp]
     """
-    kp_pos, kp_vel, ki_vel, att_kp, yaw_kp = gains
-    n        = len(ref_xa)
+    kp_pos, ki_pos, kp_vel, ki_vel, att_kp, yaw_kp = gains
+    n        = len(tx)
     dt_inner = dt / N_INNER
 
     wn2_rp   = wn * wn;           damp_rp  = 2.0 * zeta     * wn
@@ -216,13 +242,17 @@ def simulate(
     wz,  wz_dot  = 0.0, 0.0
     thr, thr_dot = 1.0, 0.0
 
-    # Velocity-error integrals
+    # Outer-loop position-error integrals
+    ipx = ipy = ipz = 0.0
+    # Inner-loop velocity-error integrals
     ivx = ivy = ivz = 0.0
 
     x_log      = np.empty(n)
     y_log      = np.empty(n)
     ref_x_log  = np.empty(n)
     ref_y_log  = np.empty(n)
+    err_x_log  = np.empty(n)
+    err_y_log  = np.empty(n)
     wx_cmd_log = np.empty(n)
     wy_cmd_log = np.empty(n)
     wz_cmd_log = np.empty(n)
@@ -231,14 +261,34 @@ def simulate(
     wz_log     = np.empty(n)
 
     for i in range(n):
-        ref_x  = ref_xa[i];   ref_y  = ref_ya[i]
-        ref_vx = ref_vxa[i];  ref_vy = ref_vya[i]
+        # ── Online standoff reference (mirrors RRTPIDPlanner::computeGoal) ───
+        dx_dt = x - tx[i]
+        dy_dt = y - ty[i]
+        d_t   = np.sqrt(dx_dt * dx_dt + dy_dt * dy_dt)
+        if d_t > 1e-6:
+            s     = desired_dist / d_t
+            ref_x = tx[i] + dx_dt * s
+            ref_y = ty[i] + dy_dt * s
+        else:
+            ref_x = tx[i] + desired_dist
+            ref_y = ty[i]
 
-        # ── Outer loop: position P + velocity feedforward ────────────────────
+        # Velocity feedforward (scaled — FF_SCALE=0 models no feedforward)
+        ref_vx = FF_SCALE * tvx[i]
+        ref_vy = FF_SCALE * tvy[i]
+
+        # ── Outer loop: position PI + velocity feedforward ───────────────────
         ex = ref_x - x;   ey = ref_y - y;   ez = z_ref - z
-        vx_sp = kp_pos * ex + ref_vx
-        vy_sp = kp_pos * ey + ref_vy
-        vz_sp = kp_pos * ez              # no feedforward for fixed altitude
+        ipx += ex * dt;   ipy += ey * dt;   ipz += ez * dt
+        # Anti-windup: clamp position integral so vel contribution ≤ MAX_IPOS_CONT
+        if ki_pos > 1e-9:
+            _lim = MAX_IPOS_CONT / ki_pos
+            ipx = float(np.clip(ipx, -_lim, _lim))
+            ipy = float(np.clip(ipy, -_lim, _lim))
+            ipz = float(np.clip(ipz, -_lim, _lim))
+        vx_sp = kp_pos * ex + ki_pos * ipx + ref_vx
+        vy_sp = kp_pos * ey + ki_pos * ipy + ref_vy
+        vz_sp = kp_pos * ez + ki_pos * ipz
 
         # ── Inner loop: velocity PID ─────────────────────────────────────────
         vel_err_x = vx_sp - vx
@@ -247,6 +297,12 @@ def simulate(
         ivx += vel_err_x * dt
         ivy += vel_err_y * dt
         ivz += vel_err_z * dt
+        # Anti-windup: clamp velocity integral so accel contribution ≤ MAX_IVEL_CONT
+        if ki_vel > 1e-9:
+            _vlim = MAX_IVEL_CONT / ki_vel
+            ivx = float(np.clip(ivx, -_vlim, _vlim))
+            ivy = float(np.clip(ivy, -_vlim, _vlim))
+            ivz = float(np.clip(ivz, -_vlim, _vlim))
         ax_des = kp_vel * vel_err_x + ki_vel * ivx
         ay_des = kp_vel * vel_err_y + ki_vel * ivy
         az_des = kp_vel * vel_err_z + ki_vel * ivz
@@ -263,7 +319,7 @@ def simulate(
         yaw_des = float(np.arctan2(ty[i] - y, tx[i] - x))
         yaw_err = (yaw_des - yaw + np.pi) % (2.0 * np.pi) - np.pi
 
-        # ── Inner loop ────────────────────────────────────────────────────────
+        # ── Attitude inner loop ───────────────────────────────────────────────
         roll_rate_cmd  = att_kp * (roll_des  - roll)
         pitch_rate_cmd = att_kp * (pitch_des - pitch)
         yaw_rate_cmd   = yaw_kp * yaw_err
@@ -288,6 +344,7 @@ def simulate(
 
         x_log[i]      = x;             y_log[i]      = y
         ref_x_log[i]  = ref_x;         ref_y_log[i]  = ref_y
+        err_x_log[i]  = ex;            err_y_log[i]  = ey
         wx_cmd_log[i] = roll_rate_cmd;  wy_cmd_log[i] = pitch_rate_cmd
         wz_cmd_log[i] = yaw_rate_cmd
         wx_log[i]     = wx;             wy_log[i]     = wy;  wz_log[i] = wz
@@ -295,11 +352,12 @@ def simulate(
     t = np.arange(n) * dt
     return {
         "t": t,
-        "x": x_log,       "y": y_log,
-        "ref_x": ref_xa,  "ref_y": ref_ya,
-        "target_x": tx,   "target_y": ty,
+        "x": x_log,        "y": y_log,
+        "ref_x": ref_x_log, "ref_y": ref_y_log,
+        "err_x": err_x_log, "err_y": err_y_log,
+        "target_x": tx,    "target_y": ty,
         "wx_cmd": wx_cmd_log, "wy_cmd": wy_cmd_log, "wz_cmd": wz_cmd_log,
-        "wx": wx_log,     "wy": wy_log,     "wz": wz_log,
+        "wx": wx_log,      "wy": wy_log,      "wz": wz_log,
     }
 
 
@@ -307,26 +365,31 @@ def simulate(
 
 def itae_cost(
     gains: np.ndarray,
-    ref_xa: np.ndarray, ref_ya: np.ndarray,
-    ref_vxa: np.ndarray, ref_vya: np.ndarray,
     tx: np.ndarray, ty: np.ndarray,
+    tvx: np.ndarray, tvy: np.ndarray,
     init_x: float, init_y: float,
-    z_ref: float, dt: float, settle_idx: int,
+    z_ref: float, desired_dist: float, dt: float, settle_idx: int,
     wn: float, zeta: float, wn_yaw: float, zeta_yaw: float,
 ) -> float:
-    if gains[0] <= 0 or gains[1] <= 0 or gains[3] <= 0 or gains[4] <= 0:
+    kp_pos, ki_pos, kp_vel, ki_vel, att_kp, yaw_kp = gains
+    if kp_pos <= 0 or kp_vel <= 0 or att_kp <= 0 or yaw_kp <= 0:
         return 1e9
-    d = simulate(gains, ref_xa, ref_ya, ref_vxa, ref_vya, tx, ty,
-                 init_x, init_y, z_ref, dt, wn, zeta, wn_yaw, zeta_yaw)
+    if ki_pos < 0 or ki_vel < 0:
+        return 1e9
+    d = simulate(gains, tx, ty, tvx, tvy, init_x, init_y, z_ref, desired_dist, dt,
+                 wn, zeta, wn_yaw, zeta_yaw)
     t      = d["t"][settle_idx:]
-    ex     = d["x"][settle_idx:]   - ref_xa[settle_idx:]
-    ey     = d["y"][settle_idx:]   - ref_ya[settle_idx:]
+    ex     = d["err_x"][settle_idx:]
+    ey     = d["err_y"][settle_idx:]
     wx_cmd = d["wx_cmd"][settle_idx:]
     wy_cmd = d["wy_cmd"][settle_idx:]
-    t0     = t[0]
-    itae   = float(np.trapz((t - t0) * (np.abs(ex) + np.abs(ey)), t))
-    effort = float(np.trapz(wx_cmd**2 + wy_cmd**2, t))
-    return itae + SMOOTHING * effort
+    t0      = t[0]
+    itae    = float(np.trapz((t - t0) * (np.abs(ex) + np.abs(ey)), t))
+    effort  = float(np.trapz(wx_cmd**2 + wy_cmd**2, t))
+    # Regularise position-loop gains — without this, ITAE is monotone in
+    # the gains (faster → lower ITAE) and the optimizer saturates at bounds.
+    gain_pen = GAIN_REG * (kp_pos**2 + ki_pos**2)
+    return itae + SMOOTHING * effort + gain_pen
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -383,43 +446,30 @@ def main():
     print(f"[tune_pid] drone_init      : ({d0x}, {d0y})  →  standoff ({init_x:.2f}, {init_y:.2f})"
           f"  target ({t0x}, {t0y})")
     print(f"[tune_pid] simulation      : dt={dt} s  opt={args.duration} s"
-          f"  settle={SETTLE_T} s  full={T_full} s")
+          f"  settle={SETTLE_T} s  full={T_full} s  FF_SCALE={FF_SCALE}")
 
     print("\nPre-simulating target trajectory …")
     tx_full, ty_full, tz_full, tvx_full, tvy_full = _simulate_target(wps, traj, dt, N_full)
 
-    # ── Pre-compute state-independent reference ───────────────────────────────
-    if dist0 > 0.01:
-        unit_ix = ddx / dist0
-        unit_iy = ddy / dist0
-    else:
-        unit_ix, unit_iy = 1.0, 0.0
+    tx_opt  = tx_full[:n_opt];   ty_opt  = ty_full[:n_opt]
+    tvx_opt = tvx_full[:n_opt];  tvy_opt = tvy_full[:n_opt]
 
-    ref_x_full = tx_full + unit_ix * desired_dist
-    ref_y_full = ty_full + unit_iy * desired_dist
-    # Reference velocity ≈ target velocity (fixed offset direction)
-    ref_vx_full = tvx_full
-    ref_vy_full = tvy_full
-
-    ref_x_opt  = ref_x_full[:n_opt];   ref_y_opt  = ref_y_full[:n_opt]
-    ref_vx_opt = ref_vx_full[:n_opt];  ref_vy_opt = ref_vy_full[:n_opt]
-    tx_opt     = tx_full[:n_opt];      ty_opt     = ty_full[:n_opt]
-
-    cost_args = (ref_x_opt, ref_y_opt, ref_vx_opt, ref_vy_opt,
-                 tx_opt, ty_opt, init_x, init_y,
-                 z_ref, dt, settle_idx, wn, zeta, wn_yaw, zeta_yaw)
+    cost_args = (tx_opt, ty_opt, tvx_opt, tvy_opt,
+                 init_x, init_y, z_ref, desired_dist,
+                 dt, settle_idx, wn, zeta, wn_yaw, zeta_yaw)
 
     # ── Optimise ──────────────────────────────────────────────────────────────
     ctrl = cfg.get("controller", {})
     x0 = np.array([
         ctrl.get("kp_pos",      1.6),
+        ctrl.get("ki_pos",      0.3),   # warm-start — must be >0 to escape saddle
         ctrl.get("kp_vel",      5.0),
         ctrl.get("ki_vel",      0.2),
         ctrl.get("attitude_kp", 6.0),
         ctrl.get("yaw_kp",      0.3),
     ])
-    bounds = Bounds(lb=[0.1, 0.5, 0.0, 1.0,  0.05],
-                    ub=[10.0, 30.0, 5.0, 25.0, 5.0])
+    bounds = Bounds(lb=[0.5, 0.0, 0.5, 0.0, 1.0,  0.15],
+                    ub=[6.0, 5.0, 20.0, 5.0, 25.0, 5.0])
 
     print(f"\nInitial cost : {itae_cost(x0, *cost_args):.4f}")
     print("Optimising (L-BFGS-B) …")
@@ -429,9 +479,10 @@ def main():
         options={"maxiter": 500, "ftol": 1e-9},
     )
 
-    kp_pos, kp_vel, ki_vel, att_kp, yaw_kp = result.x
+    kp_pos, ki_pos, kp_vel, ki_vel, att_kp, yaw_kp = result.x
     print(f"\n── Optimised gains ────────────────────────────────────────────")
     print(f"  kp_pos      : {kp_pos:.4f}  (outer position loop P)")
+    print(f"  ki_pos      : {ki_pos:.4f}  (outer position loop I — eliminates SS error)")
     print(f"  kp_vel      : {kp_vel:.4f}  (inner velocity loop P)")
     print(f"  ki_vel      : {ki_vel:.4f}  (inner velocity loop I)")
     print(f"  attitude_kp : {att_kp:.4f}  (roll/pitch inner loop)")
@@ -440,6 +491,7 @@ def main():
     print(f"\n── Paste into {os.path.basename(cfg_path)} ──────────────────────────")
     print(f"controller:")
     print(f"  kp_pos:      {kp_pos:.3f}")
+    print(f"  ki_pos:      {ki_pos:.3f}")
     print(f"  kp_vel:      {kp_vel:.3f}")
     print(f"  ki_vel:      {ki_vel:.3f}")
     print(f"  attitude_kp: {att_kp:.3f}")
@@ -449,18 +501,22 @@ def main():
         return
 
     # ── Plot: run both gain sets over full scenario duration ──────────────────
-    sim_args = (ref_x_full, ref_y_full, ref_vx_full, ref_vy_full,
-                tx_full, ty_full, init_x, init_y,
-                z_ref, dt, wn, zeta, wn_yaw, zeta_yaw)
+    sim_args = (tx_full, ty_full, tvx_full, tvy_full,
+                init_x, init_y, z_ref, desired_dist,
+                dt, wn, zeta, wn_yaw, zeta_yaw)
 
     d0 = simulate(x0,       *sim_args)
     d1 = simulate(result.x, *sim_args)
+
+    cost_args_full = (tx_full, ty_full, tvx_full, tvy_full,
+                      init_x, init_y, z_ref, desired_dist,
+                      dt, settle_idx, wn, zeta, wn_yaw, zeta_yaw)
 
     fig, axes = plt.subplots(4, 2, figsize=(13, 13))
     settle_t  = SETTLE_T
 
     for col, (d, label) in enumerate([
-        (d0, f"Scenario gains  (cost={itae_cost(x0, *cost_args):.3f})"),
+        (d0, f"Scenario gains  (cost={itae_cost(x0, *cost_args_full):.3f})"),
         (d1, f"Optimised  (cost={result.fun:.3f})"),
     ]):
         t = d["t"]
@@ -504,7 +560,8 @@ def main():
     plt.suptitle(
         f"{os.path.basename(cfg_path)}  |  "
         f"roll/pitch wn={wn} rad/s  yaw wn={wn_yaw} rad/s  zeta={zeta}  |  "
-        f"standoff={desired_dist} m  settle={SETTLE_T} s  opt_window={args.duration} s"
+        f"standoff={desired_dist} m  settle={SETTLE_T} s  opt_window={args.duration} s  "
+        f"FF_SCALE={FF_SCALE}"
     )
     plt.tight_layout()
     plt.show()

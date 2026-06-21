@@ -75,8 +75,7 @@ tmax = max(df["t"].max(), 1e-3)
 # ── Derived signals ───────────────────────────────────────────────────────────
 
 df["distance"]       = np.sqrt((df["target_x"] - df["drone_x"])**2 +
-                                (df["target_y"] - df["drone_y"])**2 +
-                                (df["target_z"] - df["drone_z"])**2)
+                                (df["target_y"] - df["drone_y"])**2)
 df["distance_error"] = df["distance"] - DESIRED_DISTANCE
 
 # Yaw reference: direction from drone to target (camera-facing)

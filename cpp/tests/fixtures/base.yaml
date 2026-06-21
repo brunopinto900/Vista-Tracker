@@ -5,6 +5,7 @@ estimator:
   motion_model: CV
 controller:
   kp_pos: 1.0
+  ki_pos: 0.0
   kp_vel: 1.0
   ki_vel: 0.0
   desired_distance: 4.0

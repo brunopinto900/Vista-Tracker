@@ -60,6 +60,7 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
     if (auto s = n["controller"])
     {
         if (s["kp_pos"])           cfg.controller.kp_pos           = s["kp_pos"].as<double>();
+        if (s["ki_pos"])           cfg.controller.ki_pos           = s["ki_pos"].as<double>();
         if (s["kp_vel"])           cfg.controller.kp_vel           = s["kp_vel"].as<double>();
         if (s["ki_vel"])           cfg.controller.ki_vel           = s["ki_vel"].as<double>();
         if (s["desired_distance"]) cfg.controller.desired_distance = s["desired_distance"].as<double>();

@@ -23,6 +23,7 @@ struct DroneConfig
 struct ControllerConfig
 {
     double kp_pos           = 1.5;  // outer position loop P gain (pos error → vel setpoint)
+    double ki_pos           = 0.0;  // outer position loop I gain (eliminates pos steady-state error)
     double kp_vel           = 5.0;  // inner velocity loop P gain (vel error → acceleration)
     double ki_vel           = 0.2;  // inner velocity loop I gain (eliminates vel steady-state error)
     double desired_distance = 4.0;

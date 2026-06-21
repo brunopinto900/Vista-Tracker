@@ -13,19 +13,14 @@ drone_init:
   y:  0.0
   z:  4.0
 
-#controller: # gains found by pid_tuner.py
-#  kp_pos:      1.887
-#  kp_vel:      8.836
-#  ki_vel:      0.000
-#  attitude_kp: 6.991
-#  yaw_kp:      0.793
-
 controller:
-  kp_pos:      1.496
-  kp_vel:      7.395
-  ki_vel:      0.000
-  attitude_kp: 8.552
-  yaw_kp:      0.280
+  kp_pos:      1.870
+  ki_pos:      1.314
+  kp_vel:      3.374
+  ki_vel:      2.287
+  desired_distance: 4.0    # 4 desired - 1.5 replan_goal_dist
+  attitude_kp: 11.839
+  yaw_kp:      0.296
 
 target_trajectory:
   type: person
@@ -73,7 +68,7 @@ world:
 planner:
   standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
   wp_reach_thresh:  0.8    # advance before fully decelerating to prevent stop-and-go
-  replan_goal_dist: 1.5    # replan more frequently so ref jumps stay small
+  replan_goal_dist: 0.8    # replan more frequently so ref jumps stay small
   rrt:
     step_size:     0.8
     goal_bias:     0.103
