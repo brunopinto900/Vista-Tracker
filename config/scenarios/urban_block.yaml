@@ -20,7 +20,7 @@ controller:
   ki_vel:      2.287
   desired_distance: 4.0    # 4 desired - 1.5 replan_goal_dist
   attitude_kp: 11.839
-  yaw_kp:      0.296
+  yaw_kp:      0.496
 
 target_trajectory:
   type: person
@@ -68,11 +68,11 @@ world:
 planner:
   standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
   wp_reach_thresh:  0.8    # advance before fully decelerating to prevent stop-and-go
-  replan_goal_dist: 0.8    # replan more frequently so ref jumps stay small
+  replan_goal_dist: 2.0    # 0.8 replan more frequently so ref jumps stay small
   rrt:
-    step_size:     0.8
-    goal_bias:     0.103
-    safety_margin: 0.5     # wider clearance to absorb tracking error during acceleration
+    step_size:     1.0
+    goal_bias:     0.06
+    safety_margin: 0.163     # wider clearance to absorb tracking error during acceleration
     edge_check_res: 0.1    # collision-check sample spacing along edge (m)
     max_iter:       4000   # RRT iteration budget per replan call
     goal_tol:       0.5    # goal-reached radius (m)

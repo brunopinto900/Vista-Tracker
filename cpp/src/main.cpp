@@ -133,7 +133,8 @@ int main(int argc, char* argv[])
          << "target_vx,target_vy,target_vz,"
          << "roll_rate,pitch_rate,yaw_rate,thrust,"
          << "ref_x,ref_y,ref_z,"
-         << "vel_ref_x,vel_ref_y,vel_ref_z\n";
+         << "vel_ref_x,vel_ref_y,vel_ref_z,"
+         << "deadlock_active,deadlock_angle\n";
 
     for (double t = 0.0; t < cfg.sim.T; t += cfg.sim.dt)
     {
@@ -157,7 +158,9 @@ int main(int argc, char* argv[])
              << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate  << ","
              << cmd.thrust     << ","
              << ref.x          << "," << ref.y          << "," << ref.z         << ","
-             << cmd.vx_sp      << "," << cmd.vy_sp      << "," << cmd.vz_sp
+             << cmd.vx_sp      << "," << cmd.vy_sp      << "," << cmd.vz_sp     << ","
+             << (ref.deadlock_active ? 1 : 0) << ","
+             << ref.deadlock_angle
              << "\n";
     }
 

@@ -91,9 +91,10 @@ df["yaw_error"] = np.arctan2(
 df["roll_des"]  = df["drone_roll"]  + df["roll_rate"]  / ATT_KP
 df["pitch_des"] = df["drone_pitch"] + df["pitch_rate"] / ATT_KP
 
-has_body_rates = "drone_wx" in df.columns
-has_vel_ref    = "vel_ref_x" in df.columns
-has_ref_pos    = "ref_x" in df.columns
+has_body_rates  = "drone_wx" in df.columns
+has_vel_ref     = "vel_ref_x" in df.columns
+has_ref_pos     = "ref_x" in df.columns
+has_deadlock    = "deadlock_active" in df.columns
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -180,6 +181,14 @@ yaw_arrow = ax_traj.quiver(
     color="dodgerblue", width=0.005, zorder=6, label="heading")
 
 ax_traj.legend(loc="upper left", fontsize=8)
+
+# Deadlock status overlay — visible only when deadlock avoidance is active
+deadlock_text = ax_traj.text(
+    0.02, 0.97, "", transform=ax_traj.transAxes,
+    ha="left", va="top", fontsize=9, fontweight="bold",
+    color="red", bbox=dict(facecolor="white", edgecolor="red",
+                           alpha=0.85, boxstyle="round,pad=0.3"),
+    zorder=10, animated=True, visible=False)
 
 # ── Panel (0,1): Tracking Error ───────────────────────────────────────────────
 
@@ -293,10 +302,27 @@ ax_att.legend(fontsize=8)
 _placeholder(ax_occ, "Occlusion metric\n(TBD)")
 ax_occ.set_title("Occlusion")
 
-# ── Panel (3,1): Reserved ─────────────────────────────────────────────────────
+# ── Panel (3,1): Deadlock angle timeline ─────────────────────────────────────
 
-_placeholder(ax_other, "To be defined")
-ax_other.set_title("Reserved")
+ax_other.set_title("Deadlock Avoidance — Viewpoint Angle")
+if has_deadlock:
+    ax_other.set_xlabel("Time [s]"); ax_other.set_ylabel("Angle [deg]")
+    ax_other.set_xlim(0, tmax)
+    _dl_angle_deg = np.degrees(df["deadlock_angle"])
+    _dl_ypad = max(_dl_angle_deg.abs().max() * 1.1, 30.0)
+    ax_other.set_ylim(-_dl_ypad, _dl_ypad)
+    ax_other.axhline(0, color="k", linewidth=0.6, linestyle="--")
+    ax_other.grid(True)
+    # shade regions where deadlock is active
+    _dl_mask = df["deadlock_active"].astype(bool)
+    ax_other.fill_between(df["t"], -_dl_ypad, _dl_ypad,
+                          where=_dl_mask, color="red", alpha=0.12, label="active")
+    deadlock_angle_line, = ax_other.plot([], [], color="red", linewidth=1.5,
+                                          label="viewpoint angle")
+    ax_other.legend(fontsize=8)
+else:
+    _placeholder(ax_other, "Deadlock data not in log\n(rebuild C++ and re-run)")
+    deadlock_angle_line, = ax_other.plot([], [])
 
 # ── Animation ─────────────────────────────────────────────────────────────────
 
@@ -306,15 +332,17 @@ _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                yaw_state_line, yaw_line,
                wx_line, wy_line, wz_line,
                drone_vx_line, drone_vy_line,
-               roll_line, pitch_line)
+               roll_line, pitch_line,
+               deadlock_angle_line)
 
 _anim_patches = tuple(obs_patches) + (sensing_circle,)
-_animated     = _anim_lines + _anim_patches + (yaw_arrow,)
+_animated     = _anim_lines + _anim_patches + (yaw_arrow, deadlock_text)
 
 def init():
     for line in _anim_lines:
         line.set_data([], [])
     yaw_arrow.set_UVC(0, 0)
+    deadlock_text.set_visible(False)
     return _animated
 
 def update(frame):
@@ -368,6 +396,18 @@ def update(frame):
     # (2,1) Roll & Pitch
     roll_line.set_data(t,  sub["drone_roll"])
     pitch_line.set_data(t, sub["drone_pitch"])
+
+    # (3,1) Deadlock avoidance
+    if has_deadlock:
+        deadlock_angle_line.set_data(t, np.degrees(sub["deadlock_angle"]))
+        active = bool(sub["deadlock_active"].iloc[-1])
+        if active:
+            angle_deg = np.degrees(sub["deadlock_angle"].iloc[-1])
+            deadlock_text.set_text(
+                f"DEADLOCK AVOIDANCE ACTIVE\nviewpoint angle: {angle_deg:.1f}°")
+            deadlock_text.set_visible(True)
+        else:
+            deadlock_text.set_visible(False)
 
     return _animated
 

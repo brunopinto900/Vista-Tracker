@@ -150,8 +150,12 @@ Reference RRTPIDPlanner::update(
     }
 
     Reference ref;
-    ref.z   = cfg_.z_ref;
-    ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);
+    ref.z              = cfg_.z_ref;
+    ref.yaw            = std::atan2(t.y - drone.y, t.x - drone.x);
+    ref.deadlock_active = !ideal_feasible;
+    ref.deadlock_angle  = !ideal_feasible
+        ? std::atan2(goal[1] - t.y, goal[0] - t.x)
+        : 0.0;
 
     if (!path_.empty() && wp_idx_ < path_.size())
     {
