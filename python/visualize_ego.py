@@ -59,10 +59,12 @@ obstacles         = cfg.get("world", {}).get("obstacles", [])
 DESIRED_DISTANCE  = cfg["controller"]["desired_distance"]
 CAMERA_RANGE      = cfg.get("camera", {}).get("range", 8.0)
 TRACKING_FOV_DEG  = cfg.get("tracking_camera", {}).get("fov", 60.0)
-TRACKING_HALF_FOV = np.radians(TRACKING_FOV_DEG / 2.0)
-TRACKING_HALF_VFOV = TRACKING_HALF_FOV * (9.0 / 16.0)   # vertical FOV, 16:9 sensor
-SIM_DT            = cfg["sim"]["dt"]
-TRAIL_LEN         = 120
+TRACKING_HALF_FOV  = np.radians(TRACKING_FOV_DEG / 2.0)
+TRACKING_HALF_VFOV = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # true vertical half-FOV, 16:9
+SIM_DT             = cfg["sim"]["dt"]
+TRAIL_LEN          = 120
+PERSON_HEIGHT      = 1.80   # m — total person height
+PERSON_TRACK_Z     = 1.40   # m — upper back / head tracking point (camera aim)
 
 grid = cfg.get("world", {}).get("grid", {})
 GRID_X_MIN = grid.get("x_min", -12.5)
@@ -71,8 +73,8 @@ GRID_Y_MIN = grid.get("y_min", -12.5)
 GRID_Y_MAX = grid.get("y_max",  12.5)
 
 # ── Camera tuning (edit these) ────────────────────────────────────────────────
-CHASE_DIST    = 4.0   # metres behind drone
-CHASE_EL      = 10.0   # elevation angle above drone (degrees)
+CHASE_DIST    = 20.0   # metres behind drone
+CHASE_EL      = 30.0   # elevation angle above drone (degrees)
 CAM_SMOOTH    = 1.0 #0.15   # position follow speed  (0 = frozen … 1 = instant)
 CAM_SMOOTH_AZ = 1.0 #0.10   # heading follow speed   (0 = frozen … 1 = instant)
 
@@ -98,21 +100,26 @@ def _rotor_circle(cx, cy, r=0.55, n=10):
     a = np.linspace(0, 2 * np.pi, n + 1)
     return np.column_stack([cx + r * np.cos(a), cy + r * np.sin(a), np.zeros(n + 1)])
 
-def _frustum_pts(dx, dy, dz, yaw, half_h, half_v, length):
-    """NaN-separated line segments forming a camera frustum pyramid."""
-    cos_y = np.cos(yaw); sin_y = np.sin(yaw)
-    hw = length * np.tan(half_h)   # half-width at far plane
-    hh = length * np.tan(half_v)   # half-height at far plane
-    fcx = dx + length * cos_y
-    fcy = dy + length * sin_y
-    fcz = dz
-    rx, ry = sin_y, -cos_y        # right vector (perp to forward in XY)
-    tl = [fcx - hw*rx, fcy - hw*ry, fcz + hh]
-    tr = [fcx + hw*rx, fcy + hw*ry, fcz + hh]
-    bl = [fcx - hw*rx, fcy - hw*ry, fcz - hh]
-    br = [fcx + hw*rx, fcy + hw*ry, fcz - hh]
-    ap = [dx, dy, dz]
-    n  = [np.nan, np.nan, np.nan]
+def _frustum_pts(dx, dy, dz, yaw, pitch, half_h, half_v, length):
+    """NaN-separated line segments forming a pitched camera frustum pyramid.
+
+    pitch > 0 means camera tilts downward (positive = looking down).
+    """
+    cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+    cos_p, sin_p = np.cos(pitch), np.sin(pitch)
+    fw = np.array([cos_y * cos_p, sin_y * cos_p, -sin_p])   # forward (pitched down)
+    rv = np.array([sin_y, -cos_y, 0.0])                      # right (horizontal)
+    uv = np.cross(rv, fw); uv /= np.linalg.norm(uv)          # up (perp to rv & fw)
+    hw = length * np.tan(half_h)
+    hh = length * np.tan(half_v)
+    tip = np.array([dx, dy, dz])
+    fc  = tip + fw * length
+    tl  = (fc - hw * rv + hh * uv).tolist()
+    tr  = (fc + hw * rv + hh * uv).tolist()
+    bl  = (fc - hw * rv - hh * uv).tolist()
+    br  = (fc + hw * rv - hh * uv).tolist()
+    ap  = [dx, dy, dz]
+    n   = [np.nan, np.nan, np.nan]
     return np.array([
         ap, tl, n, ap, tr, n, ap, bl, n, ap, br, n,
         tl, tr, n, tr, br, n, br, bl, n, bl, tl, n,
@@ -186,9 +193,12 @@ for obs in obstacles:
     box.transform = transforms.STTransform(translate=(obs["x"], obs["y"], float(sz)))
     _obs_boxes.append(box)
 
-# Shared MeshData — reused for both main and PiP scenes
-_cyl_md  = create_cylinder(rows=10, cols=14, radius=[0.3, 0.3], length=1.65)
-_head_md = create_sphere(rows=8, cols=12, radius=0.28)
+# Shared MeshData — 1.80 m person: body 1.36 m + head r=0.22 m → top at 1.80 m
+_BODY_LEN   = 1.36   # cylinder length (bottom at 0, top at 1.36 m)
+_BODY_CEN_Z = _BODY_LEN / 2.0           # 0.68 m — cylinder centre
+_HEAD_CEN_Z = _BODY_LEN + 0.22          # 1.58 m — head centre
+_cyl_md  = create_cylinder(rows=10, cols=14, radius=[0.28, 0.28], length=_BODY_LEN)
+_head_md = create_sphere(rows=8, cols=12, radius=0.22)
 
 _person_cyl = visuals.Mesh(meshdata=_cyl_md, color=(0.82, 0.28, 0.08, 0.95),
                             shading="flat", parent=view.scene)
@@ -403,7 +413,7 @@ def _on_timer(event):
     dz   = float(row["drone_z"]) if "drone_z" in df.columns else 2.0
     tx   = float(row["target_x"])
     ty   = float(row["target_y"])
-    tz   = 0.0
+    tz   = PERSON_TRACK_Z   # upper back / head tracking point
     yaw  = float(row["drone_yaw"])
     tsim = float(row["t"])
 
@@ -431,22 +441,26 @@ def _on_timer(event):
             pip_box.mesh.color = c
             mini_ln.set_data(color=c)
 
-    # ── Person ────────────────────────────────────────────────────────────────
-    _cyl_tr.translate      = (tx, ty, 0.825)
-    _head_tr.translate     = (tx, ty, 1.93)
-    _pip_cyl_tr.translate  = (tx, ty, 0.825)
-    _pip_head_tr.translate = (tx, ty, 1.93)
+    # ── Person (1.80 m — body cylinder + head sphere) ────────────────────────
+    _cyl_tr.translate      = (tx, ty, _BODY_CEN_Z)
+    _head_tr.translate     = (tx, ty, _HEAD_CEN_Z)
+    _pip_cyl_tr.translate  = (tx, ty, _BODY_CEN_Z)
+    _pip_head_tr.translate = (tx, ty, _HEAD_CEN_Z)
 
     # ── Drone 3-D model ───────────────────────────────────────────────────────
     _update_drone_3d(dx, dy, dz, yaw)
 
-    # ── Camera frustum ────────────────────────────────────────────────────────
-    _frustum.set_data(pos=_frustum_pts(dx, dy, dz, yaw,
+    # ── Camera pitch toward tracking point ────────────────────────────────────
+    horiz_dist = max(float(np.hypot(tx - dx, ty - dy)), 0.01)
+    pitch_cam  = float(np.arctan2(dz - tz, horiz_dist))   # positive = pitched down
+
+    # ── Camera frustum (pitched toward tracking point) ────────────────────────
+    _frustum.set_data(pos=_frustum_pts(dx, dy, dz, yaw, pitch_cam,
                                         TRACKING_HALF_FOV, TRACKING_HALF_VFOV,
                                         CAMERA_RANGE))
 
     # ── Trails ────────────────────────────────────────────────────────────────
-    _world_trail.append((tx, ty, tz + 0.05))
+    _world_trail.append((tx, ty, 0.05))   # ground-level path trace
     if len(_world_trail) > TRAIL_LEN: _world_trail.pop(0)
     if len(_world_trail) >= 2:
         _trail_3d.set_data(pos=np.array(_world_trail, dtype=np.float32))
@@ -490,14 +504,21 @@ def _on_timer(event):
     # ── HUD ───────────────────────────────────────────────────────────────────
     ref_yaw = np.arctan2(ty - dy, tx - dx)
     yaw_err = np.arctan2(np.sin(yaw - ref_yaw), np.cos(yaw - ref_yaw))
-    in_fov  = abs(yaw_err) <= TRACKING_HALF_FOV
-    dist    = float(np.sqrt((dx-tx)**2 + (dy-ty)**2 + dz**2))
+
+    # 3-D cone FOV check: angle between horizontal bore and 3-D direction to tracking point.
+    # Accounts for both horizontal yaw error and the elevation the drone must pitch down.
+    t_vec    = np.array([tx - dx, ty - dy, tz - dz], dtype=float)
+    t_dist   = max(float(np.linalg.norm(t_vec)), 0.01)
+    bore     = np.array([np.cos(yaw), np.sin(yaw), 0.0])
+    angle_3d = float(np.arccos(np.clip(np.dot(bore, t_vec / t_dist), -1.0, 1.0)))
+    in_fov   = angle_3d <= TRACKING_HALF_FOV
+    dist     = t_dist   # 3-D range to tracking point
 
     _hud_metrics.text = (
         f"t = {tsim:.1f} s\n"
         f"drone ({dx:.1f}, {dy:.1f}, {dz:.1f}) m\n"
         f"range = {dist:.2f} m   Δ = {dist - DESIRED_DISTANCE:+.2f} m\n"
-        f"yaw err = {np.degrees(yaw_err):.1f}°"
+        f"yaw err = {np.degrees(yaw_err):.1f}°   cam↓ = {np.degrees(pitch_cam):.1f}°"
     )
     _hud_status.text  = "TARGET IN FOV" if in_fov else "TARGET LOST"
     _hud_status.color = "#00ff88" if in_fov else "#ff4444"

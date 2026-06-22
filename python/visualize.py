@@ -66,6 +66,7 @@ FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)          # omnidir
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
 TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)  # tracking camera
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
+PERSON_TRACK_Z      = 1.40   # m — upper back / head tracking point
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -76,8 +77,10 @@ tmax = max(df["t"].max(), 1e-3)
 
 # ── Derived signals ───────────────────────────────────────────────────────────
 
+_drone_z_arr = df["drone_z"].to_numpy() if "drone_z" in df.columns else np.full(len(df), 2.0)
 df["distance"]       = np.sqrt((df["target_x"] - df["drone_x"])**2 +
-                                (df["target_y"] - df["drone_y"])**2)
+                                (df["target_y"] - df["drone_y"])**2 +
+                                (PERSON_TRACK_Z - _drone_z_arr)**2)
 df["distance_error"] = df["distance"] - DESIRED_DISTANCE
 
 # Yaw reference: direction from drone to target (camera-facing)
@@ -135,8 +138,24 @@ df["occlusion_deg"] = _compute_occlusion_deg(
     df["target_x"].to_numpy(), df["target_y"].to_numpy(),
     obstacles, TRACKING_FOV_DEG, D_FOV)
 
-# Precompute per-frame time the target has been continuously outside FOV (resets on re-entry)
-_oof_arr = np.abs(df["yaw_error"].to_numpy()) > TRACKING_HALF_FOV
+# Precompute per-frame time the target has been continuously outside FOV (resets on re-entry).
+# Uses a 3-D cone check: angle between horizontal camera bore (drone yaw) and the 3-D
+# direction to the tracking point on the person (back/head at PERSON_TRACK_Z).
+_t_vec = np.stack([
+    df["target_x"].to_numpy() - df["drone_x"].to_numpy(),
+    df["target_y"].to_numpy() - df["drone_y"].to_numpy(),
+    np.full(len(df), PERSON_TRACK_Z) - _drone_z_arr,
+], axis=1)
+_t_dist  = np.linalg.norm(_t_vec, axis=1, keepdims=True)
+_t_vec_n = _t_vec / np.maximum(_t_dist, 0.01)
+_bore    = np.stack([
+    np.cos(df["drone_yaw"].to_numpy()),
+    np.sin(df["drone_yaw"].to_numpy()),
+    np.zeros(len(df)),
+], axis=1)
+_cos_err = np.einsum("ij,ij->i", _bore, _t_vec_n)
+_oof_arr = np.arccos(np.clip(_cos_err, -1.0, 1.0)) > TRACKING_HALF_FOV
+df["out_of_fov"] = _oof_arr
 _dt_sim  = cfg["sim"]["dt"]
 _fov_dur = np.zeros(len(_oof_arr))
 _acc     = 0.0
@@ -512,7 +531,7 @@ def update(frame):
 
     # (3,0) Occlusion
     occ_line.set_data(t, sub["occlusion_deg"])
-    if bool(np.abs(sub["yaw_error"].iloc[-1]) > TRACKING_HALF_FOV):
+    if bool(sub["out_of_fov"].iloc[-1]):
         dur = sub["fov_loss_duration"].iloc[-1]
         fov_loss_text.set_text(f"TARGET OUT OF FoV\n{dur:.1f}s")
         fov_loss_text.set_visible(True)
