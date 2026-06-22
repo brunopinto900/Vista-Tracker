@@ -18,6 +18,11 @@ camera:
 tracking_camera:
   fov:    60.0           # horizontal field of view (degrees) — tracking camera (±30°)
 
+target:
+  height:    1.80        # m — person total height
+  width:     0.50        # m — shoulder width (physical extent used for occlusion)
+  track_z:   1.40        # m — camera aim point (upper back / head level)
+
 estimator:
   horizon:      10
   motion_model: CV      # CV | CTRV | CA

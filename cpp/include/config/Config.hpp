@@ -31,6 +31,13 @@ struct ControllerConfig
     double yaw_kp           = 0.3;  // yaw inner loop (rad/s per rad) — slower plant
 };
 
+struct TargetConfig
+{
+    double height  = 1.80;  // m — total person height
+    double width   = 0.50;  // m — shoulder width (physical extent)
+    double track_z = 1.40;  // m — camera aim point (upper back / head level)
+};
+
 struct PlannerConfig
 {
     // Waypoint sequencer
@@ -62,6 +69,7 @@ struct Config
     ControllerConfig controller;
     TargetTrajectory trajectory;
 
+    TargetConfig  target;
     PlannerConfig planner;
     World         world;
 };

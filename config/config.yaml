@@ -27,6 +27,11 @@ sim:
   dt: 0.05
   T:  10.0
 
+target:
+  height:    1.80        # m — person total height
+  width:     0.50        # m — shoulder width
+  track_z:   1.40        # m — camera aim point (upper back / head level)
+
 estimator:
   horizon:      10
   motion_model: CV

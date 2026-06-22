@@ -66,7 +66,7 @@ FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)          # omnidir
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
 TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)  # tracking camera
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
-PERSON_TRACK_Z      = 1.40   # m — upper back / head tracking point
+PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)  # m — camera aim point height
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)

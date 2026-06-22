@@ -63,8 +63,9 @@ TRACKING_HALF_FOV  = np.radians(TRACKING_FOV_DEG / 2.0)
 TRACKING_HALF_VFOV = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # true vertical half-FOV, 16:9
 SIM_DT             = cfg["sim"]["dt"]
 TRAIL_LEN          = 120
-PERSON_HEIGHT      = 1.80   # m — total person height
-PERSON_TRACK_Z     = 1.40   # m — upper back / head tracking point (camera aim)
+_target_cfg    = cfg.get("target", {})
+PERSON_HEIGHT  = _target_cfg.get("height",  1.80)  # m — person total height
+PERSON_TRACK_Z = _target_cfg.get("track_z", 1.40)  # m — camera aim point (upper back / head)
 
 grid = cfg.get("world", {}).get("grid", {})
 GRID_X_MIN = grid.get("x_min", -12.5)
@@ -193,12 +194,14 @@ for obs in obstacles:
     box.transform = transforms.STTransform(translate=(obs["x"], obs["y"], float(sz)))
     _obs_boxes.append(box)
 
-# Shared MeshData — 1.80 m person: body 1.36 m + head r=0.22 m → top at 1.80 m
-_BODY_LEN   = 1.36   # cylinder length (bottom at 0, top at 1.36 m)
-_BODY_CEN_Z = _BODY_LEN / 2.0           # 0.68 m — cylinder centre
-_HEAD_CEN_Z = _BODY_LEN + 0.22          # 1.58 m — head centre
+# Shared MeshData — person scaled from PERSON_HEIGHT config value.
+# Body: cylinder from z=0 to z=BODY_LEN.  Head: sphere above the body.
+_HEAD_R     = 0.22                            # head sphere radius (m) — fixed proportion
+_BODY_LEN   = PERSON_HEIGHT - 2.0 * _HEAD_R  # leaves room for a full head diameter
+_BODY_CEN_Z = _BODY_LEN / 2.0               # cylinder centre (bottom at 0)
+_HEAD_CEN_Z = _BODY_LEN + _HEAD_R           # head centre (just above body top)
 _cyl_md  = create_cylinder(rows=10, cols=14, radius=[0.28, 0.28], length=_BODY_LEN)
-_head_md = create_sphere(rows=8, cols=12, radius=0.22)
+_head_md = create_sphere(rows=8, cols=12, radius=_HEAD_R)
 
 _person_cyl = visuals.Mesh(meshdata=_cyl_md, color=(0.82, 0.28, 0.08, 0.95),
                             shading="flat", parent=view.scene)
