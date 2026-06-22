@@ -73,6 +73,8 @@ int main(int argc, char* argv[])
               << " kp_vel=" << cfg.controller.kp_vel
               << " ki_vel=" << cfg.controller.ki_vel
               << " desired_distance=" << cfg.controller.desired_distance << "\n"
+              << "[config] tracking_camera  fov=" << cfg.tracking_camera.fov_deg
+              << "° vfov=±" << cfg.tracking_camera.vfov_deg << "°\n"
               << "[config] target          height=" << cfg.target.height
               << " width=" << cfg.target.width
               << " track_z=" << cfg.target.track_z << "\n"
@@ -105,7 +107,8 @@ int main(int argc, char* argv[])
     planner_cfg.standoff_dist    = cfg.planner.standoff_dist;
     planner_cfg.wp_reach_thresh  = cfg.planner.wp_reach_thresh;
     planner_cfg.replan_goal_dist = cfg.planner.replan_goal_dist;
-    planner_cfg.z_ref            = cfg.drone_init.z;
+    planner_cfg.vfov_half_rad    = cfg.tracking_camera.vfov_deg * M_PI / 180.0;
+    planner_cfg.min_z            = cfg.target.track_z + 0.5;  // 0.5 m above aim point
     planner_cfg.target_track_z   = cfg.target.track_z;
     planner_cfg.rrt.step_size      = cfg.planner.step_size;
     planner_cfg.rrt.goal_bias      = cfg.planner.goal_bias;

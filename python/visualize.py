@@ -4,13 +4,15 @@ Vista-Tracker visualiser  –  4 × 2 animated dashboard.
 
 Panels:
   [0,0]  2-D trajectory with obstacles and desired-distance circle
-  [0,1]  Camera pitch: reference, drone body pitch, and ±V-FoV error band
-  [1,0]  Yaw: reference, state, and ±half-FoV acceptance band
-  [1,1]  Body rates: controller commands vs actual plant response
-  [2,0]  Velocities: drone state vs target (reference)
-  [2,1]  Roll & pitch: attitude setpoints vs state
-  [3,0]  FOV occlusion by obstacles (angular, deg)
-  [3,1]  Deadlock avoidance viewpoint angle
+  [0,1]  Altitude: drone height vs desired/reference height
+  [1,1]  Lateral tracking error (drone − target in X and Y)
+  [2,0]  Yaw: reference, state, and ±half-FoV acceptance band
+  [2,1]  Body rates: controller commands vs actual plant response
+  [3,0]  Velocities: drone state vs target (reference)
+  [3,1]  Roll & pitch: attitude setpoints vs state
+  [4,0]  Camera pitch: reference, state, and ±V-FoV acceptance band
+  [4,1]  FOV occlusion by obstacles (angular, deg)
+  Deadlock shown as text overlay on the XY trajectory plot.
 
 Static reference signals are pre-plotted for the full horizon.
 Animated state signals grow frame-by-frame.
@@ -62,12 +64,12 @@ obstacles        = cfg.get("world", {}).get("obstacles", [])
 grid             = cfg.get("world", {}).get("grid", {})
 DESIRED_DISTANCE    = cfg["controller"]["desired_distance"]
 ATT_KP              = cfg["controller"]["attitude_kp"]
-FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)          # omnidirectional sensing
+FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
-TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)  # tracking camera
+TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
-TRACKING_HALF_VFOV  = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # 16:9 sensor
-PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)  # m — camera aim point height
+TRACKING_HALF_VFOV  = np.radians(cfg.get("tracking_camera", {}).get("vfov", 18.0))
+PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -75,6 +77,8 @@ GRID_Y_MIN = grid.get("y_min", -12.5)
 GRID_Y_MAX = grid.get("y_max",  12.5)
 
 tmax = max(df["t"].max(), 1e-3)
+
+_vfov_deg = np.degrees(TRACKING_HALF_VFOV)
 
 # ── Derived signals ───────────────────────────────────────────────────────────
 
@@ -84,16 +88,17 @@ df["distance"]       = np.sqrt((df["target_x"] - df["drone_x"])**2 +
                                 (PERSON_TRACK_Z - _drone_z_arr)**2)
 df["distance_error"] = df["distance"] - DESIRED_DISTANCE
 
-# Yaw reference: direction from drone to target (camera-facing)
+df["x_error"]    = df["drone_x"] - df["target_x"]
+df["y_error"]    = df["drone_y"] - df["target_y"]
+df["xy_distance"] = np.sqrt(df["x_error"]**2 + df["y_error"]**2)
+
 df["ref_yaw"] = np.arctan2(df["target_y"] - df["drone_y"],
                             df["target_x"] - df["drone_x"])
 
-# Heading error: signed angle from ref to drone yaw, wrapped to [-π, π]
 df["yaw_error"] = np.arctan2(
     np.sin(df["drone_yaw"] - df["ref_yaw"]),
     np.cos(df["drone_yaw"] - df["ref_yaw"]))
 
-# Attitude setpoints back-computed from inner-loop: rate = att_kp*(des - state)
 df["roll_des"]  = df["drone_roll"]  + df["roll_rate"]  / ATT_KP
 df["pitch_des"] = df["drone_pitch"] + df["pitch_rate"] / ATT_KP
 
@@ -102,6 +107,7 @@ has_vel_ref     = "vel_ref_x" in df.columns
 has_ref_pos     = "ref_x" in df.columns
 has_deadlock    = "deadlock_active" in df.columns
 has_cam_pitch   = "ref_camera_pitch" in df.columns
+has_ref_z       = "ref_z" in df.columns
 
 if has_cam_pitch:
     df["pitch_cam_error"] = np.arctan2(
@@ -109,19 +115,14 @@ if has_cam_pitch:
         np.cos(df["drone_pitch"] - df["ref_camera_pitch"]))
 
 # ── Occlusion metric (eq. 4.28–4.29) ─────────────────────────────────────────
-# d_surface = max(0, d_centre − obs.size): dist from obstacle SURFACE to LOS
-# θocc = θFOV · max(0, 1 − d_surface / dFOV)
-# dFOV = 4 m (standoff distance — surface at dFOV from LOS → zero occlusion)
 
-D_FOV = DESIRED_DISTANCE  # 4 m — normalisation distance from thesis eq. 4.29
+D_FOV = DESIRED_DISTANCE
 
 def _los_point_dist(ox, oy, px, py, tx, ty):
-    """Distance from O to segment P→T interior; inf if projection falls outside (0,1)."""
     dx, dy  = tx - px, ty - py
     len_sq  = dx*dx + dy*dy
     safe    = np.where(len_sq < 1e-12, 1.0, len_sq)
     t_raw   = ((ox - px)*dx + (oy - py)*dy) / safe
-    # Obstacle can only occlude if it projects strictly between drone (0) and target (1)
     in_seg  = (t_raw > 0.0) & (t_raw < 1.0) & (len_sq >= 1e-12)
     t_clip  = np.clip(t_raw, 0.0, 1.0)
     d       = np.hypot(ox - (px + t_clip*dx), oy - (py + t_clip*dy))
@@ -130,14 +131,13 @@ def _los_point_dist(ox, oy, px, py, tx, ty):
 def _compute_occlusion_deg(drone_x, drone_y, target_x, target_y, obs_list, fov_deg, d_fov):
     if not obs_list:
         return np.zeros(len(drone_x))
-    # d_surface: distance from each obstacle SURFACE (not centre) to LOS segment
     dists = np.stack([
         np.maximum(0.0,
             _los_point_dist(obs["x"], obs["y"], drone_x, drone_y, target_x, target_y)
             - obs["size"])
         for obs in obs_list
-    ])  # shape (n_obs, n_steps)
-    d_min = dists.min(axis=0)  # closest obstacle surface to LOS at each step
+    ])
+    d_min = dists.min(axis=0)
     return fov_deg * np.maximum(0.0, 1.0 - d_min / d_fov)
 
 df["occlusion_deg"] = _compute_occlusion_deg(
@@ -145,23 +145,12 @@ df["occlusion_deg"] = _compute_occlusion_deg(
     df["target_x"].to_numpy(), df["target_y"].to_numpy(),
     obstacles, TRACKING_FOV_DEG, D_FOV)
 
-# Precompute per-frame time the target has been continuously outside FOV (resets on re-entry).
-# Uses a 3-D cone check: angle between horizontal camera bore (drone yaw) and the 3-D
-# direction to the tracking point on the person (back/head at PERSON_TRACK_Z).
-_t_vec = np.stack([
-    df["target_x"].to_numpy() - df["drone_x"].to_numpy(),
-    df["target_y"].to_numpy() - df["drone_y"].to_numpy(),
-    np.full(len(df), PERSON_TRACK_Z) - _drone_z_arr,
-], axis=1)
-_t_dist  = np.linalg.norm(_t_vec, axis=1, keepdims=True)
-_t_vec_n = _t_vec / np.maximum(_t_dist, 0.01)
-_bore    = np.stack([
-    np.cos(df["drone_yaw"].to_numpy()),
-    np.sin(df["drone_yaw"].to_numpy()),
-    np.zeros(len(df)),
-], axis=1)
-_cos_err = np.einsum("ij,ij->i", _bore, _t_vec_n)
-_oof_arr = np.arccos(np.clip(_cos_err, -1.0, 1.0)) > TRACKING_HALF_FOV
+# Out-of-FOV: check yaw error against H-FOV and pitch error against V-FOV.
+# Mirrors how the yaw and camera-pitch subplots define "in-frame".
+_oof_horiz = np.abs(df["yaw_error"].to_numpy()) > TRACKING_HALF_FOV
+_oof_vert  = (np.abs(df["pitch_cam_error"].to_numpy()) > TRACKING_HALF_VFOV
+              if has_cam_pitch else np.zeros(len(df), dtype=bool))
+_oof_arr   = _oof_horiz | _oof_vert
 df["out_of_fov"] = _oof_arr
 _dt_sim  = cfg["sim"]["dt"]
 _fov_dur = np.zeros(len(_oof_arr))
@@ -174,7 +163,6 @@ df["fov_loss_duration"] = _fov_dur
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _esdf_color(dist_to_drone, obs_size):
-    """Red (at obstacle surface) → green (at DESIRED_DISTANCE from surface)."""
     d_surf = max(0.0, dist_to_drone - obs_size)
     t = min(1.0, d_surf / DESIRED_DISTANCE)
     return (1.0 - t, 0.1 + t * 0.75, 0.05)
@@ -200,67 +188,51 @@ def _placeholder(ax, label):
 #
 #  col 0 (left)       col 1 (right)
 #  ┌──────────────┐   ┌─────────────┐  row 0
-#  │              │   │     TBD     │
+#  │              │   │  altitude   │
 #  │  2-D traj    │   ├─────────────┤  row 1
-#  │              │   │  dist error │
+#  │              │   │  x,y error  │
 #  ├──────────────┤   ├─────────────┤  row 2
-#  │     yaw      │   │  body rates │
+#  │  yaw+pitch   │   │  body rates │
 #  ├──────────────┤   ├─────────────┤  row 3
 #  │  velocities  │   │  roll/pitch │
 #  ├──────────────┤   ├─────────────┤  row 4
-#  │  occlusion   │   │   deadlock  │
+#  │  cam pitch   │   │  occlusion  │
 #  └──────────────┘   └─────────────┘
+# Deadlock: text overlay on the XY plot only.
 
 fig = plt.figure(figsize=(16, 22))
 gs  = GridSpec(5, 2, figure=fig, hspace=0.38, wspace=0.28)
 fig.suptitle("Vista-Tracker — Simulation Dashboard", fontsize=13, y=0.998)
 
-ax_traj  = fig.add_subplot(gs[0:2, 0])  # XY: spans rows 0–1 on the left
-ax_tbd   = fig.add_subplot(gs[0,   1])  # TBD placeholder (top-right)
-ax_err   = fig.add_subplot(gs[1,   1])  # Tracking distance error
-ax_yaw   = fig.add_subplot(gs[2,   0])  # Yaw
-ax_rates = fig.add_subplot(gs[2,   1])  # Body rates
-ax_vel   = fig.add_subplot(gs[3,   0])  # Velocities
-ax_att   = fig.add_subplot(gs[3,   1])  # Roll & pitch
-ax_occ   = fig.add_subplot(gs[4,   0])  # Occlusion
-ax_other = fig.add_subplot(gs[4,   1])  # Deadlock angle
+ax_traj  = fig.add_subplot(gs[0:2, 0])
+ax_alt   = fig.add_subplot(gs[0,   1])
+ax_err   = fig.add_subplot(gs[1,   1])
+ax_yaw   = fig.add_subplot(gs[2,   0])
+ax_rates = fig.add_subplot(gs[2,   1])
+ax_vel   = fig.add_subplot(gs[3,   0])
+ax_att   = fig.add_subplot(gs[3,   1])
+ax_pitch = fig.add_subplot(gs[4,   0])  # Camera pitch
+ax_occ   = fig.add_subplot(gs[4,   1])  # Occlusion (moved from left)
 
-# ── Panel (0,1): Camera Pitch ─────────────────────────────────────────────────
+# ── Panel (0,1): Altitude ─────────────────────────────────────────────────────
 
-_vfov_deg = np.degrees(TRACKING_HALF_VFOV)
-ax_tbd.set_title(
-    f"Camera Pitch  (V-FoV = {TRACKING_FOV_DEG:.0f}°H → ±{_vfov_deg:.1f}°V, "
-    f"target in FoV if |error| < {_vfov_deg:.1f}°)")
-ax_tbd.set_xlabel("Time [s]"); ax_tbd.set_ylabel("Angle / Error [rad]")
-ax_tbd.set_xlim(0, tmax)
-ax_tbd.grid(True)
+ax_alt.set_title("Altitude  (drone vs desired)")
+ax_alt.set_xlabel("Time [s]"); ax_alt.set_ylabel("Height [m]")
+ax_alt.set_xlim(0, tmax)
+ax_alt.grid(True)
 
-if has_cam_pitch:
-    _pitch_cols = [df["ref_camera_pitch"], df["drone_pitch"], df["pitch_cam_error"]]
-    ax_tbd.set_ylim(*_ylim(*_pitch_cols, pad=0.2))
+_alt_cols = [_drone_z_arr]
+if has_ref_z:
+    _alt_cols.append(df["ref_z"].to_numpy())
+ax_alt.set_ylim(*_ylim(*[pd.Series(c) for c in _alt_cols], pad=0.3))
 
-    # ±half V-FOV acceptance band centred on zero (error interpretation)
-    ax_tbd.fill_between([0, tmax], -TRACKING_HALF_VFOV, TRACKING_HALF_VFOV,
-                        color="lightgreen", alpha=0.30, zorder=1)
-    ax_tbd.axhline( TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":",
-                   label=f"±{_vfov_deg:.1f}° V-FoV", zorder=2)
-    ax_tbd.axhline(-TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
-    ax_tbd.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
-
-    # Static camera pitch reference (full horizon)
-    ax_tbd.plot(df["t"], df["ref_camera_pitch"], color="orange", linewidth=1.0,
-                linestyle="--", label="cam pitch ref", zorder=3)
-
-    # Animated: actual body pitch state and pitch error
-    cam_pitch_state_line, = ax_tbd.plot([], [], color="steelblue", linewidth=1.5,
-                                         label="drone pitch", zorder=4)
-    cam_pitch_err_line,   = ax_tbd.plot([], [], color="crimson",   linewidth=1.5,
-                                         label="pitch error", zorder=5)
-    ax_tbd.legend(fontsize=8)
-else:
-    _placeholder(ax_tbd, "Camera pitch not in log\n(rebuild C++ and re-run)")
-    cam_pitch_state_line, = ax_tbd.plot([], [])
-    cam_pitch_err_line,   = ax_tbd.plot([], [])
+if has_ref_z:
+    ax_alt.plot(df["t"], df["ref_z"], color="orange", linewidth=1.0,
+                linestyle="--", label="desired altitude", zorder=3)
+ax_alt.axhline(0, color="k", linewidth=0.5, linestyle=":", zorder=2)
+alt_drone_line, = ax_alt.plot([], [], color="steelblue", linewidth=1.5,
+                               label="drone z", zorder=4)
+ax_alt.legend(fontsize=8)
 
 # ── Panel (0,0): 2-D Trajectory ───────────────────────────────────────────────
 
@@ -270,7 +242,6 @@ ax_traj.set_xlim(GRID_X_MIN, GRID_X_MAX)
 ax_traj.set_ylim(GRID_Y_MIN, GRID_Y_MAX)
 ax_traj.set_aspect("equal"); ax_traj.grid(True, zorder=0)
 
-# Tracking FOV cone — animated wedge, ±TRACKING_HALF_FOV around drone yaw
 _yaw0 = df["drone_yaw"].iloc[0]
 fov_wedge = patches.Wedge(
     (df["drone_x"].iloc[0], df["drone_y"].iloc[0]),
@@ -282,7 +253,6 @@ fov_wedge = patches.Wedge(
     label=f"Tracking FoV {TRACKING_FOV_DEG:.0f}°")
 ax_traj.add_patch(fov_wedge)
 
-# Obstacles start grey (unknown); coloured when inside camera range
 obs_patches = []
 for i, obs in enumerate(obstacles):
     ox, oy, sz = obs["x"], obs["y"], obs["size"]
@@ -313,7 +283,7 @@ if has_ref_pos:
 else:
     ref_marker, = ax_traj.plot([], [], [])
 
-ARROW_LEN = 3.0  # heading arrow length (metres)
+ARROW_LEN = 3.0
 yaw_arrow = ax_traj.quiver(
     df["drone_x"].iloc[0], df["drone_y"].iloc[0],
     ARROW_LEN * np.cos(df["drone_yaw"].iloc[0]),
@@ -323,7 +293,6 @@ yaw_arrow = ax_traj.quiver(
 
 ax_traj.legend(loc="upper left", fontsize=8)
 
-# Deadlock status overlay — visible only when deadlock avoidance is active
 deadlock_text = ax_traj.text(
     0.02, 0.97, "", transform=ax_traj.transAxes,
     ha="left", va="top", fontsize=9, fontweight="bold",
@@ -331,45 +300,44 @@ deadlock_text = ax_traj.text(
                            alpha=0.85, boxstyle="round,pad=0.3"),
     zorder=10, animated=True, visible=False)
 
-# ── Panel (0,1): Tracking Error ───────────────────────────────────────────────
+# ── Panel (1,1): XY Tracking Distance ────────────────────────────────────────
 
-ax_err.set_title("Tracking Distance Error")
-ax_err.set_xlabel("Time [s]"); ax_err.set_ylabel("Error [m]")
-ax_err.axhline(0, color="k", linewidth=0.8, linestyle="--")
+ax_err.set_title("XY Tracking Distance  (drone − target)")
+ax_err.set_xlabel("Time [s]"); ax_err.set_ylabel("Distance [m]")
+ax_err.axhline(DESIRED_DISTANCE, color="orange", linewidth=1.2, linestyle="--",
+               label=f"desired {DESIRED_DISTANCE:.1f} m")
 ax_err.set_xlim(0, tmax)
-ax_err.set_ylim(*_ylim(df["distance_error"]))
+ax_err.set_ylim(0, max(df["xy_distance"].max(), DESIRED_DISTANCE) + 0.5)
 ax_err.grid(True)
 
-error_line, = ax_err.plot([], [], "r-", linewidth=1.5)
+xy_dist_line, = ax_err.plot([], [], color="steelblue", linewidth=1.5, label="XY distance")
+ax_err.legend(fontsize=8)
 
-# ── Panel (1,0): Yaw — reference, state, and heading error ───────────────────
+# ── Panel (2,0): Yaw ─────────────────────────────────────────────────────────
 
-ax_yaw.set_title(f"Yaw  (tracking FoV = {TRACKING_FOV_DEG:.0f}°, target in FoV if |error| < {TRACKING_FOV_DEG/2:.0f}°)")
+ax_yaw.set_title(f"Yaw  (tracking FoV ±{TRACKING_FOV_DEG/2:.0f}°, target in FoV if |error| < {TRACKING_FOV_DEG/2:.0f}°)")
 ax_yaw.set_xlabel("Time [s]"); ax_yaw.set_ylabel("Angle / Error [rad]")
 ax_yaw.set_xlim(0, tmax)
 ax_yaw.set_ylim(*_ylim(df["yaw_error"], df["ref_yaw"], df["drone_yaw"], pad=0.2))
 ax_yaw.grid(True)
 
-# ±half tracking-FoV acceptance band centred on zero (error interpretation)
 ax_yaw.fill_between([0, tmax], -TRACKING_HALF_FOV, TRACKING_HALF_FOV,
-                    color="green", alpha=0.10, zorder=1)
+                    color="lightgreen", alpha=0.25, zorder=1)
 ax_yaw.axhline( TRACKING_HALF_FOV, color="green", linewidth=1.0, linestyle=":",
                label=f"±{TRACKING_FOV_DEG/2:.0f}° tracking FoV", zorder=2)
 ax_yaw.axhline(-TRACKING_HALF_FOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
+ax_yaw.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
 
-# Static yaw reference (full horizon) — dashed, matches setpoint convention elsewhere
 ax_yaw.plot(df["t"], df["ref_yaw"], color="orange", linewidth=1.0,
             linestyle="--", label="yaw ref", zorder=3)
 
-# Animated: actual yaw state and heading error
 yaw_state_line, = ax_yaw.plot([], [], color="steelblue", linewidth=1.5,
                                label="drone yaw", zorder=4)
 yaw_line,       = ax_yaw.plot([], [], color="crimson",   linewidth=1.5,
-                               label="heading error", zorder=5)
-ax_yaw.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
+                               label="yaw error", zorder=5)
 ax_yaw.legend(fontsize=8)
 
-# ── Panel (1,1): Body Rates ───────────────────────────────────────────────────
+# ── Panel (2,1): Body Rates ───────────────────────────────────────────────────
 
 ax_rates.set_title("Body Rates  (cmd: dashed  |  actual: solid)")
 ax_rates.set_xlabel("Time [s]"); ax_rates.set_ylabel("Rate [rad/s]")
@@ -380,13 +348,9 @@ if has_body_rates:
     rate_cols = [df["roll_rate"], df["pitch_rate"], df["yaw_rate"],
                  df["drone_wx"],  df["drone_wy"],   df["drone_wz"]]
     ax_rates.set_ylim(*_ylim(*rate_cols))
-
-    # Static commands (full horizon)
     ax_rates.plot(df["t"], df["roll_rate"],  "r--", linewidth=1.0, label="wx_cmd (roll)")
     ax_rates.plot(df["t"], df["pitch_rate"], "b--", linewidth=1.0, label="wy_cmd (pitch)")
     ax_rates.plot(df["t"], df["yaw_rate"],   "g--", linewidth=1.0, label="wz_cmd (yaw)")
-
-    # Animated actual rates
     wx_line, = ax_rates.plot([], [], "r-", linewidth=1.5, label="wx actual")
     wy_line, = ax_rates.plot([], [], "b-", linewidth=1.5, label="wy actual")
     wz_line, = ax_rates.plot([], [], "g-", linewidth=1.5, label="wz actual")
@@ -395,7 +359,7 @@ else:
     _placeholder(ax_rates, "Body rates not in log\n(rebuild C++ and re-run)")
     wx_line = wy_line = wz_line = ax_rates.plot([], [])[0]
 
-# ── Panel (2,0): Velocities ───────────────────────────────────────────────────
+# ── Panel (3,0): Velocities ───────────────────────────────────────────────────
 
 ax_vel.set_title("Velocities  (target: dashed  |  vel ref: dash-dot  |  drone: solid)")
 ax_vel.set_xlabel("Time [s]"); ax_vel.set_ylabel("Velocity [m/s]")
@@ -406,13 +370,11 @@ if has_vel_ref:
 ax_vel.set_ylim(*_ylim(*_vel_cols))
 ax_vel.grid(True)
 
-# Static target velocities (feedforward reference)
 ax_vel.plot(df["t"], df["target_vx"], "r--", linewidth=1.0, label="target vx")
 ax_vel.plot(df["t"], df["target_vy"], "b--", linewidth=1.0, label="target vy")
 
-# Static controller velocity setpoints (outer-loop output)
 if has_vel_ref:
-    ax_vel.plot(df["t"], df["vel_ref_x"], color="tomato",     linewidth=1.0,
+    ax_vel.plot(df["t"], df["vel_ref_x"], color="tomato",        linewidth=1.0,
                 linestyle="-.", label="vel ref x")
     ax_vel.plot(df["t"], df["vel_ref_y"], color="cornflowerblue", linewidth=1.0,
                 linestyle="-.", label="vel ref y")
@@ -421,7 +383,7 @@ drone_vx_line, = ax_vel.plot([], [], "r-", linewidth=1.5, label="drone vx")
 drone_vy_line, = ax_vel.plot([], [], "b-", linewidth=1.5, label="drone vy")
 ax_vel.legend(fontsize=8)
 
-# ── Panel (2,1): Roll & Pitch ─────────────────────────────────────────────────
+# ── Panel (3,1): Roll & Pitch ─────────────────────────────────────────────────
 
 ax_att.set_title("Roll & Pitch  (setpoint: dashed  |  state: solid)")
 ax_att.set_xlabel("Time [s]"); ax_att.set_ylabel("Angle [rad]")
@@ -430,7 +392,6 @@ ax_att.set_ylim(*_ylim(df["drone_roll"], df["drone_pitch"],
                         df["roll_des"],  df["pitch_des"]))
 ax_att.grid(True)
 
-# Static attitude setpoints
 ax_att.plot(df["t"], df["roll_des"],  "r--", linewidth=1.0, label="roll setpoint")
 ax_att.plot(df["t"], df["pitch_des"], "b--", linewidth=1.0, label="pitch setpoint")
 
@@ -438,7 +399,38 @@ roll_line,  = ax_att.plot([], [], "r-", linewidth=1.5, label="roll state")
 pitch_line, = ax_att.plot([], [], "b-", linewidth=1.5, label="pitch state")
 ax_att.legend(fontsize=8)
 
-# ── Panel (3,0): Occlusion ────────────────────────────────────────────────────
+# ── Panel (4,0): Camera Pitch ─────────────────────────────────────────────────
+
+ax_pitch.set_title(f"Camera Pitch  (V-FoV ±{_vfov_deg:.1f}°, target in FoV if |error| < {_vfov_deg:.1f}°)")
+ax_pitch.set_xlabel("Time [s]"); ax_pitch.set_ylabel("Angle / Error [rad]")
+ax_pitch.set_xlim(0, tmax)
+ax_pitch.grid(True)
+
+if has_cam_pitch:
+    _pitch_cols = [df["ref_camera_pitch"], df["drone_pitch"], df["pitch_cam_error"]]
+    ax_pitch.set_ylim(*_ylim(*_pitch_cols, pad=0.2))
+
+    ax_pitch.fill_between([0, tmax], -TRACKING_HALF_VFOV, TRACKING_HALF_VFOV,
+                          color="lightgreen", alpha=0.30, zorder=1)
+    ax_pitch.axhline( TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":",
+                     label=f"±{_vfov_deg:.1f}° V-FoV", zorder=2)
+    ax_pitch.axhline(-TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
+    ax_pitch.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
+
+    ax_pitch.plot(df["t"], df["ref_camera_pitch"], color="orange", linewidth=1.0,
+                  linestyle="--", label="cam pitch ref", zorder=3)
+
+    cam_pitch_state_line, = ax_pitch.plot([], [], color="steelblue", linewidth=1.5,
+                                           label="drone pitch", zorder=4)
+    cam_pitch_err_line,   = ax_pitch.plot([], [], color="crimson",   linewidth=1.5,
+                                           label="pitch error", zorder=5)
+    ax_pitch.legend(fontsize=8)
+else:
+    _placeholder(ax_pitch, "Camera pitch not in log\n(rebuild C++ and re-run)")
+    cam_pitch_state_line, = ax_pitch.plot([], [])
+    cam_pitch_err_line,   = ax_pitch.plot([], [])
+
+# ── Panel (4,1): Occlusion ────────────────────────────────────────────────────
 
 ax_occ.set_title(f"LOS Occlusion  (tracking FoV = {TRACKING_FOV_DEG:.0f}°)")
 ax_occ.set_xlabel("Time [s]"); ax_occ.set_ylabel("Occluded angle [deg]")
@@ -446,7 +438,6 @@ ax_occ.set_xlim(0, tmax)
 ax_occ.set_ylim(0, TRACKING_FOV_DEG * 1.05)
 ax_occ.grid(True, zorder=0)
 
-# Light green fill representing the full tracking FOV (±30°)
 ax_occ.fill_between([0, tmax], 0, TRACKING_FOV_DEG,
                     color="lightgreen", alpha=0.25, zorder=1,
                     label=f"tracking FoV ±{TRACKING_FOV_DEG/2:.0f}°")
@@ -455,13 +446,11 @@ ax_occ.axhline(TRACKING_FOV_DEG, color="green", linewidth=1.0, linestyle="--", z
 occ_line, = ax_occ.plot([], [], color="darkorange", linewidth=1.5,
                          label="occluded angle", zorder=3)
 
-# Red shading where target is outside tracking FOV (static, precomputed)
 ax_occ.fill_between(df["t"], 0, TRACKING_FOV_DEG * 1.05,
                     where=_oof_arr, color="lightcoral", alpha=0.30, zorder=2,
                     label="target out of FoV")
 ax_occ.legend(fontsize=8)
 
-# Animated text overlay while target is out of FOV
 fov_loss_text = ax_occ.text(
     0.98, 0.97, "", transform=ax_occ.transAxes,
     ha="right", va="top", fontsize=9, fontweight="bold",
@@ -469,40 +458,18 @@ fov_loss_text = ax_occ.text(
                                alpha=0.85, boxstyle="round,pad=0.3"),
     zorder=10, animated=True, visible=False)
 
-# ── Panel (3,1): Deadlock angle timeline ─────────────────────────────────────
-
-ax_other.set_title("Deadlock Avoidance — Viewpoint Angle")
-if has_deadlock:
-    ax_other.set_xlabel("Time [s]"); ax_other.set_ylabel("Angle [deg]")
-    ax_other.set_xlim(0, tmax)
-    _dl_angle_deg = np.degrees(df["deadlock_angle"])
-    _dl_ypad = max(_dl_angle_deg.abs().max() * 1.1, 30.0)
-    ax_other.set_ylim(-_dl_ypad, _dl_ypad)
-    ax_other.axhline(0, color="k", linewidth=0.6, linestyle="--")
-    ax_other.grid(True)
-    # shade regions where deadlock is active
-    _dl_mask = df["deadlock_active"].astype(bool)
-    ax_other.fill_between(df["t"], -_dl_ypad, _dl_ypad,
-                          where=_dl_mask, color="red", alpha=0.12, label="active")
-    deadlock_angle_line, = ax_other.plot([], [], color="red", linewidth=1.5,
-                                          label="viewpoint angle")
-    ax_other.legend(fontsize=8)
-else:
-    _placeholder(ax_other, "Deadlock data not in log\n(rebuild C++ and re-run)")
-    deadlock_angle_line, = ax_other.plot([], [])
-
 # ── Animation ─────────────────────────────────────────────────────────────────
 
 _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                ref_marker,
-               cam_pitch_state_line, cam_pitch_err_line,
-               error_line,
+               alt_drone_line,
+               xy_dist_line,
                yaw_state_line, yaw_line,
+               cam_pitch_state_line, cam_pitch_err_line,
                wx_line, wy_line, wz_line,
                drone_vx_line, drone_vy_line,
                roll_line, pitch_line,
-               occ_line,
-               deadlock_angle_line)
+               occ_line)
 
 _anim_patches = tuple(obs_patches) + (fov_wedge,)
 _animated     = _anim_lines + _anim_patches + (yaw_arrow, deadlock_text, fov_loss_text)
@@ -520,8 +487,8 @@ def update(frame):
     t   = sub["t"]
 
     # (0,0) Trajectory
-    dx = sub["drone_x"].iloc[-1]
-    dy = sub["drone_y"].iloc[-1]
+    dx  = sub["drone_x"].iloc[-1]
+    dy  = sub["drone_y"].iloc[-1]
     yaw = sub["drone_yaw"].iloc[-1]
     drone_path.set_data(sub["drone_x"], sub["drone_y"])
     drone_marker.set_data([dx], [dy])
@@ -535,12 +502,10 @@ def update(frame):
     yaw_arrow.set_offsets([[dx, dy]])
     yaw_arrow.set_UVC(ARROW_LEN * np.cos(yaw), ARROW_LEN * np.sin(yaw))
 
-    # Tracking FOV cone
     fov_wedge.set_center((dx, dy))
     fov_wedge.set_theta1(np.degrees(yaw - TRACKING_HALF_FOV))
     fov_wedge.set_theta2(np.degrees(yaw + TRACKING_HALF_FOV))
 
-    # Obstacles: ESDF gradient (red→green) when in camera range, grey otherwise
     for patch, obs in zip(obs_patches, obstacles):
         dist = np.hypot(dx - obs["x"], dy - obs["y"])
         if max(0.0, dist - obs["size"]) <= CAMERA_RANGE:
@@ -551,33 +516,36 @@ def update(frame):
         else:
             patch.set_facecolor("#CCCCCC"); patch.set_edgecolor("#888888"); patch.set_alpha(0.5)
 
-    # (0,1) Camera pitch
-    if has_cam_pitch:
-        cam_pitch_state_line.set_data(t, sub["drone_pitch"])
-        cam_pitch_err_line.set_data(t, sub["pitch_cam_error"])
+    # (0,1) Altitude
+    alt_drone_line.set_data(t, _drone_z_arr[:frame + 1])
 
-    # (1,1) Error  [layout: ax_err is row 1, col 1]
-    error_line.set_data(t, sub["distance_error"])
+    # (1,1) XY tracking distance
+    xy_dist_line.set_data(t, sub["xy_distance"])
 
-    # (1,0) Yaw: state, reference, and heading error
+    # (2,0) Yaw
     yaw_state_line.set_data(t, sub["drone_yaw"])
     yaw_line.set_data(t, sub["yaw_error"])
 
-    # (1,1) Body rates
+    # (2,1) Body rates
     if has_body_rates:
         wx_line.set_data(t, sub["drone_wx"])
         wy_line.set_data(t, sub["drone_wy"])
         wz_line.set_data(t, sub["drone_wz"])
 
-    # (2,0) Velocities
+    # (3,0) Velocities
     drone_vx_line.set_data(t, sub["drone_vx"])
     drone_vy_line.set_data(t, sub["drone_vy"])
 
-    # (2,1) Roll & Pitch
+    # (3,1) Roll & Pitch
     roll_line.set_data(t,  sub["drone_roll"])
     pitch_line.set_data(t, sub["drone_pitch"])
 
-    # (3,0) Occlusion
+    # (4,0) Camera pitch
+    if has_cam_pitch:
+        cam_pitch_state_line.set_data(t, sub["drone_pitch"])
+        cam_pitch_err_line.set_data(t, sub["pitch_cam_error"])
+
+    # (4,1) Occlusion
     occ_line.set_data(t, sub["occlusion_deg"])
     if bool(sub["out_of_fov"].iloc[-1]):
         dur = sub["fov_loss_duration"].iloc[-1]
@@ -586,9 +554,8 @@ def update(frame):
     else:
         fov_loss_text.set_visible(False)
 
-    # (3,1) Deadlock avoidance
+    # Deadlock: text overlay in XY plot only
     if has_deadlock:
-        deadlock_angle_line.set_data(t, np.degrees(sub["deadlock_angle"]))
         active = bool(sub["deadlock_active"].iloc[-1])
         if active:
             angle_deg = np.degrees(sub["deadlock_angle"].iloc[-1])

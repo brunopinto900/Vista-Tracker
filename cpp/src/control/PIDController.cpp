@@ -56,7 +56,14 @@ ControlCommand PIDController::update(
     const double ax_body =  ax_des * cy + ay_des * sy;
     const double ay_body = -ax_des * sy + ay_des * cy;
 
-    const double pitch_des = std::clamp( reference.camera_pitch + std::atan2(ax_body, kG), -kMaxAngle, kMaxAngle);
+    // Camera aim takes full priority: it gets its allocation first (up to kMaxAngle).
+    // Propulsion pitch is then clamped to whatever budget remains so the total
+    // stays in [-kMaxAngle, kMaxAngle] without silently stealing from the camera aim.
+    const double cam_pitch  = std::clamp(reference.camera_pitch, -kMaxAngle, kMaxAngle);
+    const double prop_pitch = std::atan2(ax_body, kG);
+    const double pitch_des  = cam_pitch + std::clamp(prop_pitch,
+                                                      -kMaxAngle - cam_pitch,
+                                                       kMaxAngle - cam_pitch);
     const double roll_des  = std::clamp(-std::atan2(ay_body, kG), -kMaxAngle, kMaxAngle);
     const double thrust    = std::clamp((kG + az_des) / kG, 0.0, kMaxThrust);
 

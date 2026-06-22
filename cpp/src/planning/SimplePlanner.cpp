@@ -16,10 +16,12 @@ Reference SimplePlanner::update(
         ? M_PI_2
         : std::atan2(drone.z - cfg_.target_track_z, horiz_dist);
 
+    const double z_vfov = cfg_.target_track_z
+                        + horiz_dist * std::tan(0.9 * cfg_.vfov_half_rad);
     Reference ref;
     ref.x            = t.x - cfg_.desired_distance;
     ref.y            = t.y;
-    ref.z            = t.z;
+    ref.z            = std::max(z_vfov, cfg_.min_z);
     ref.yaw          = std::atan2(t.y - drone.y, t.x - drone.x);
     ref.camera_pitch = camera_pitch;
     return ref;

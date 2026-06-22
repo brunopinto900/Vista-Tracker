@@ -27,8 +27,9 @@ public:
         double standoff_dist    = 4.0;  // metres from target
         double wp_reach_thresh  = 0.5;  // advance waypoint within this radius (m)
         double replan_goal_dist = 1.5;  // replan when goal shifts more than this (m)
-        double z_ref            = 4.0;  // fixed flight altitude (m)
-        double target_track_z   = 1.40; // m — camera aim point height on the person
+        double vfov_half_rad    = 0.5236; // camera V-FOV half-angle (rad) — 30° default
+        double min_z            = 2.0;   // minimum safe altitude (m)
+        double target_track_z   = 1.40;  // m — camera aim point height on the person
         RRTConfig rrt{};
     };
 

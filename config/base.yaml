@@ -17,6 +17,7 @@ camera:
 
 tracking_camera:
   fov:    60.0           # horizontal field of view (degrees) — tracking camera (±30°)
+  vfov:   30.0           # vertical half-angle (degrees) — pitch band within which target stays in frame (±30°)
 
 target:
   height:    1.80        # m — person total height

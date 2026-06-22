@@ -31,6 +31,12 @@ struct ControllerConfig
     double yaw_kp           = 0.3;  // yaw inner loop (rad/s per rad) — slower plant
 };
 
+struct TrackingCameraConfig
+{
+    double fov_deg  = 60.0;  // horizontal full FOV (degrees, ±30°)
+    double vfov_deg = 30.0;  // vertical half-angle (degrees, ±30°)
+};
+
 struct TargetConfig
 {
     double height  = 1.80;  // m — total person height
@@ -69,7 +75,8 @@ struct Config
     ControllerConfig controller;
     TargetTrajectory trajectory;
 
-    TargetConfig  target;
-    PlannerConfig planner;
+    TrackingCameraConfig tracking_camera;
+    TargetConfig         target;
+    PlannerConfig        planner;
     World         world;
 };

@@ -6,7 +6,7 @@ base: ../base.yaml
 drone_init:
   x: -5.0
   y:  0.0
-  z:  2.0
+  z:  3.0
 
 sim:
   T: 45.0

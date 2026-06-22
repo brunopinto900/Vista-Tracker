@@ -68,6 +68,12 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
         if (s["yaw_kp"])           cfg.controller.yaw_kp           = s["yaw_kp"].as<double>();
     }
 
+    if (auto s = n["tracking_camera"])
+    {
+        if (s["fov"])  cfg.tracking_camera.fov_deg  = s["fov"].as<double>();
+        if (s["vfov"]) cfg.tracking_camera.vfov_deg = s["vfov"].as<double>();
+    }
+
     if (auto s = n["target"])
     {
         if (s["height"])  cfg.target.height  = s["height"].as<double>();

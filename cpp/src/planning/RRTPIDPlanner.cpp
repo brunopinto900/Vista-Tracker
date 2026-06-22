@@ -156,8 +156,13 @@ Reference RRTPIDPlanner::update(
         ? M_PI_2
         : std::atan2(drone.z - cfg_.target_track_z, horiz_dist);
 
+    // Dynamic altitude: fly as high as possible while keeping the target within
+    // 90% of the V-FOV half-angle when the drone is level (pitch ≈ 0 at steady
+    // state). This ensures the target stays in-frame without relying on body pitch.
+    const double z_vfov = cfg_.target_track_z
+                        + horiz_dist * std::tan(0.9 * cfg_.vfov_half_rad);
     Reference ref;
-    ref.z              = cfg_.z_ref;
+    ref.z              = std::max(z_vfov, cfg_.min_z);
     ref.yaw            = std::atan2(t.y - drone.y, t.x - drone.x);
     ref.camera_pitch   = camera_pitch;
     ref.deadlock_active = !ideal_feasible;
@@ -207,7 +212,7 @@ Reference RRTPIDPlanner::update(
         State s{};
         s.x = path_[i][0];
         s.y = path_[i][1];
-        s.z = cfg_.z_ref;
+        s.z = ref.z;
         ref.trajectory.push_back(s);
     }
 
