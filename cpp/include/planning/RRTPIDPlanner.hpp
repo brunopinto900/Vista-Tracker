@@ -28,6 +28,7 @@ public:
         double wp_reach_thresh  = 0.5;  // advance waypoint within this radius (m)
         double replan_goal_dist = 1.5;  // replan when goal shifts more than this (m)
         double z_ref            = 4.0;  // fixed flight altitude (m)
+        double target_track_z   = 1.40; // m — camera aim point height on the person
         RRTConfig rrt{};
     };
 

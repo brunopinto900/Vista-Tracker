@@ -68,6 +68,13 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
         if (s["yaw_kp"])           cfg.controller.yaw_kp           = s["yaw_kp"].as<double>();
     }
 
+    if (auto s = n["target"])
+    {
+        if (s["height"])  cfg.target.height  = s["height"].as<double>();
+        if (s["width"])   cfg.target.width    = s["width"].as<double>();
+        if (s["track_z"]) cfg.target.track_z  = s["track_z"].as<double>();
+    }
+
     if (auto s = n["planner"])
     {
         if (s["standoff_dist"])    cfg.planner.standoff_dist    = s["standoff_dist"].as<double>();

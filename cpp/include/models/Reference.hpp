@@ -11,7 +11,8 @@ struct Reference
     double vx  = 0.0;  // velocity feedforward (target velocity)
     double vy  = 0.0;
     double vz  = 0.0;
-    double yaw = 0.0;  // desired heading (rad) — camera-facing the target
+    double yaw          = 0.0;  // desired heading (rad) — camera-facing the target in azimuth
+    double camera_pitch = 0.0;  // desired camera pitch (rad, positive = looking down) toward track_z
 
     std::vector<State> trajectory;  // optional MPC horizon
 

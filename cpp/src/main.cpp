@@ -73,6 +73,9 @@ int main(int argc, char* argv[])
               << " kp_vel=" << cfg.controller.kp_vel
               << " ki_vel=" << cfg.controller.ki_vel
               << " desired_distance=" << cfg.controller.desired_distance << "\n"
+              << "[config] target          height=" << cfg.target.height
+              << " width=" << cfg.target.width
+              << " track_z=" << cfg.target.track_z << "\n"
               << "[config] planner         standoff=" << cfg.planner.standoff_dist
               << " wp_thresh=" << cfg.planner.wp_reach_thresh
               << " replan_dist=" << cfg.planner.replan_goal_dist << "\n"
@@ -103,6 +106,7 @@ int main(int argc, char* argv[])
     planner_cfg.wp_reach_thresh  = cfg.planner.wp_reach_thresh;
     planner_cfg.replan_goal_dist = cfg.planner.replan_goal_dist;
     planner_cfg.z_ref            = cfg.drone_init.z;
+    planner_cfg.target_track_z   = cfg.target.track_z;
     planner_cfg.rrt.step_size      = cfg.planner.step_size;
     planner_cfg.rrt.goal_bias      = cfg.planner.goal_bias;
     planner_cfg.rrt.safety_margin  = cfg.planner.safety_margin;
@@ -132,7 +136,7 @@ int main(int argc, char* argv[])
          << "drone_wx,drone_wy,drone_wz,"
          << "target_vx,target_vy,target_vz,"
          << "roll_rate,pitch_rate,yaw_rate,thrust,"
-         << "ref_x,ref_y,ref_z,"
+         << "ref_x,ref_y,ref_z,ref_yaw,ref_camera_pitch,"
          << "vel_ref_x,vel_ref_y,vel_ref_z,"
          << "deadlock_active,deadlock_angle\n";
 
@@ -158,6 +162,7 @@ int main(int argc, char* argv[])
              << cmd.roll_rate  << "," << cmd.pitch_rate << "," << cmd.yaw_rate  << ","
              << cmd.thrust     << ","
              << ref.x          << "," << ref.y          << "," << ref.z         << ","
+             << ref.yaw        << "," << ref.camera_pitch << ","
              << cmd.vx_sp      << "," << cmd.vy_sp      << "," << cmd.vz_sp     << ","
              << (ref.deadlock_active ? 1 : 0) << ","
              << ref.deadlock_angle

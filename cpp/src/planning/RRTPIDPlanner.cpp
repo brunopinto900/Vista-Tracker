@@ -149,9 +149,17 @@ Reference RRTPIDPlanner::update(
         ++wp_idx_;
     }
 
+    // Camera pitch: angle the tracking camera must look down to centre on track_z.
+    // horiz_dist is the 2-D ground distance from drone to target.
+    const double horiz_dist  = std::hypot(t.x - drone.x, t.y - drone.y);
+    const double camera_pitch = (horiz_dist < 1e-6)
+        ? M_PI_2
+        : std::atan2(drone.z - cfg_.target_track_z, horiz_dist);
+
     Reference ref;
     ref.z              = cfg_.z_ref;
     ref.yaw            = std::atan2(t.y - drone.y, t.x - drone.x);
+    ref.camera_pitch   = camera_pitch;
     ref.deadlock_active = !ideal_feasible;
     ref.deadlock_angle  = !ideal_feasible
         ? std::atan2(goal[1] - t.y, goal[0] - t.x)

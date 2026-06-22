@@ -2,8 +2,7 @@
 
 #include <cmath>
 
-SimplePlanner::SimplePlanner(double desired_distance)
-    : desired_distance_(desired_distance) {}
+SimplePlanner::SimplePlanner(const Config& cfg) : cfg_(cfg) {}
 
 Reference SimplePlanner::update(
     const State&          drone,
@@ -12,10 +11,16 @@ Reference SimplePlanner::update(
 {
     const auto& t = target.horizon[0];
 
+    const double horiz_dist  = std::hypot(t.x - drone.x, t.y - drone.y);
+    const double camera_pitch = (horiz_dist < 1e-6)
+        ? M_PI_2
+        : std::atan2(drone.z - cfg_.target_track_z, horiz_dist);
+
     Reference ref;
-    ref.x   = t.x - desired_distance_;
-    ref.y   = t.y;
-    ref.z   = t.z;
-    ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);  // face the target
+    ref.x            = t.x - cfg_.desired_distance;
+    ref.y            = t.y;
+    ref.z            = t.z;
+    ref.yaw          = std::atan2(t.y - drone.y, t.x - drone.x);
+    ref.camera_pitch = camera_pitch;
     return ref;
 }

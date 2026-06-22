@@ -56,7 +56,7 @@ ControlCommand PIDController::update(
     const double ax_body =  ax_des * cy + ay_des * sy;
     const double ay_body = -ax_des * sy + ay_des * cy;
 
-    const double pitch_des = std::clamp(std::atan2(ax_body, kG), -kMaxAngle, kMaxAngle);
+    const double pitch_des = std::clamp( reference.camera_pitch + std::atan2(ax_body, kG), -kMaxAngle, kMaxAngle);
     const double roll_des  = std::clamp(-std::atan2(ay_body, kG), -kMaxAngle, kMaxAngle);
     const double thrust    = std::clamp((kG + az_des) / kG, 0.0, kMaxThrust);
 
