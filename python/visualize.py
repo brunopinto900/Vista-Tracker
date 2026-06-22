@@ -147,6 +147,12 @@ df["fov_loss_duration"] = _fov_dur
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
+def _esdf_color(dist_to_drone, obs_size):
+    """Red (at obstacle surface) → green (at DESIRED_DISTANCE from surface)."""
+    d_surf = max(0.0, dist_to_drone - obs_size)
+    t = min(1.0, d_surf / DESIRED_DISTANCE)
+    return (1.0 - t, 0.1 + t * 0.75, 0.05)
+
 def _ylim(*cols, pad=0.5):
     lo = min(c.min() for c in cols)
     hi = max(c.max() for c in cols)
@@ -472,11 +478,14 @@ def update(frame):
     fov_wedge.set_theta1(np.degrees(yaw - TRACKING_HALF_FOV))
     fov_wedge.set_theta2(np.degrees(yaw + TRACKING_HALF_FOV))
 
-    # Obstacles: coloured when within camera range, grey otherwise
+    # Obstacles: ESDF gradient (red→green) when in camera range, grey otherwise
     for patch, obs in zip(obs_patches, obstacles):
         dist = np.hypot(dx - obs["x"], dy - obs["y"])
-        if dist <= CAMERA_RANGE:
-            patch.set_facecolor("#FF6B6B"); patch.set_edgecolor("#8B0000"); patch.set_alpha(0.7)
+        if max(0.0, dist - obs["size"]) <= CAMERA_RANGE:
+            r, g, b = _esdf_color(dist, obs["size"])
+            patch.set_facecolor((r, g, b))
+            patch.set_edgecolor((r * 0.55, g * 0.45, b))
+            patch.set_alpha(0.82)
         else:
             patch.set_facecolor("#CCCCCC"); patch.set_edgecolor("#888888"); patch.set_alpha(0.5)
 

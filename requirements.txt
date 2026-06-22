@@ -1,2 +1,3 @@
 sudo apt install libyaml-cpp-dev
 pip3 install pyvista
+pip3 install vispy
