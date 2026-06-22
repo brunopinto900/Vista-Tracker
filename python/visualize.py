@@ -4,7 +4,7 @@ Vista-Tracker visualiser  –  4 × 2 animated dashboard.
 
 Panels:
   [0,0]  2-D trajectory with obstacles and desired-distance circle
-  [0,1]  Tracking distance error
+  [0,1]  Camera pitch: reference, drone body pitch, and ±V-FoV error band
   [1,0]  Yaw: reference, state, and ±half-FoV acceptance band
   [1,1]  Body rates: controller commands vs actual plant response
   [2,0]  Velocities: drone state vs target (reference)
@@ -66,6 +66,7 @@ FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)          # omnidir
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
 TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)  # tracking camera
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
+TRACKING_HALF_VFOV  = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # 16:9 sensor
 PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)  # m — camera aim point height
 
 GRID_X_MIN = grid.get("x_min", -12.5)
@@ -100,6 +101,12 @@ has_body_rates  = "drone_wx" in df.columns
 has_vel_ref     = "vel_ref_x" in df.columns
 has_ref_pos     = "ref_x" in df.columns
 has_deadlock    = "deadlock_active" in df.columns
+has_cam_pitch   = "ref_camera_pitch" in df.columns
+
+if has_cam_pitch:
+    df["pitch_cam_error"] = np.arctan2(
+        np.sin(df["drone_pitch"] - df["ref_camera_pitch"]),
+        np.cos(df["drone_pitch"] - df["ref_camera_pitch"]))
 
 # ── Occlusion metric (eq. 4.28–4.29) ─────────────────────────────────────────
 # d_surface = max(0, d_centre − obs.size): dist from obstacle SURFACE to LOS
@@ -218,7 +225,42 @@ ax_att   = fig.add_subplot(gs[3,   1])  # Roll & pitch
 ax_occ   = fig.add_subplot(gs[4,   0])  # Occlusion
 ax_other = fig.add_subplot(gs[4,   1])  # Deadlock angle
 
-_placeholder(ax_tbd, "TBD")
+# ── Panel (0,1): Camera Pitch ─────────────────────────────────────────────────
+
+_vfov_deg = np.degrees(TRACKING_HALF_VFOV)
+ax_tbd.set_title(
+    f"Camera Pitch  (V-FoV = {TRACKING_FOV_DEG:.0f}°H → ±{_vfov_deg:.1f}°V, "
+    f"target in FoV if |error| < {_vfov_deg:.1f}°)")
+ax_tbd.set_xlabel("Time [s]"); ax_tbd.set_ylabel("Angle / Error [rad]")
+ax_tbd.set_xlim(0, tmax)
+ax_tbd.grid(True)
+
+if has_cam_pitch:
+    _pitch_cols = [df["ref_camera_pitch"], df["drone_pitch"], df["pitch_cam_error"]]
+    ax_tbd.set_ylim(*_ylim(*_pitch_cols, pad=0.2))
+
+    # ±half V-FOV acceptance band centred on zero (error interpretation)
+    ax_tbd.fill_between([0, tmax], -TRACKING_HALF_VFOV, TRACKING_HALF_VFOV,
+                        color="lightgreen", alpha=0.30, zorder=1)
+    ax_tbd.axhline( TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":",
+                   label=f"±{_vfov_deg:.1f}° V-FoV", zorder=2)
+    ax_tbd.axhline(-TRACKING_HALF_VFOV, color="green", linewidth=1.0, linestyle=":", zorder=2)
+    ax_tbd.axhline(0, color="k", linewidth=0.6, linestyle="--", zorder=2)
+
+    # Static camera pitch reference (full horizon)
+    ax_tbd.plot(df["t"], df["ref_camera_pitch"], color="orange", linewidth=1.0,
+                linestyle="--", label="cam pitch ref", zorder=3)
+
+    # Animated: actual body pitch state and pitch error
+    cam_pitch_state_line, = ax_tbd.plot([], [], color="steelblue", linewidth=1.5,
+                                         label="drone pitch", zorder=4)
+    cam_pitch_err_line,   = ax_tbd.plot([], [], color="crimson",   linewidth=1.5,
+                                         label="pitch error", zorder=5)
+    ax_tbd.legend(fontsize=8)
+else:
+    _placeholder(ax_tbd, "Camera pitch not in log\n(rebuild C++ and re-run)")
+    cam_pitch_state_line, = ax_tbd.plot([], [])
+    cam_pitch_err_line,   = ax_tbd.plot([], [])
 
 # ── Panel (0,0): 2-D Trajectory ───────────────────────────────────────────────
 
@@ -453,6 +495,7 @@ else:
 
 _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                ref_marker,
+               cam_pitch_state_line, cam_pitch_err_line,
                error_line,
                yaw_state_line, yaw_line,
                wx_line, wy_line, wz_line,
@@ -508,7 +551,12 @@ def update(frame):
         else:
             patch.set_facecolor("#CCCCCC"); patch.set_edgecolor("#888888"); patch.set_alpha(0.5)
 
-    # (0,1) Error
+    # (0,1) Camera pitch
+    if has_cam_pitch:
+        cam_pitch_state_line.set_data(t, sub["drone_pitch"])
+        cam_pitch_err_line.set_data(t, sub["pitch_cam_error"])
+
+    # (1,1) Error  [layout: ax_err is row 1, col 1]
     error_line.set_data(t, sub["distance_error"])
 
     # (1,0) Yaw: state, reference, and heading error
