@@ -99,6 +99,7 @@ CHASE_DIST    =  9.0   # metres behind drone — close enough to feel dynamic
 CHASE_EL      = 32.0   # elevation above drone (°) — clears ~7 m buildings; 9 m centre block still clips briefly
 CAM_SMOOTH    = 1.0 #0.15   # position follow speed  (0 = frozen … 1 = instant)
 CAM_SMOOTH_AZ = 1.0 #0.10   # heading follow speed   (0 = frozen … 1 = instant)
+_AZ_OFFSETS   = [0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180]  # azimuth search order (°)
 
 # Layout
 W, H       = 1040, 760
@@ -121,6 +122,45 @@ def _esdf_color(drone_x, drone_y, obs):
 def _rotor_circle(cx, cy, r=0.55, n=10):
     a = np.linspace(0, 2 * np.pi, n + 1)
     return np.column_stack([cx + r * np.cos(a), cy + r * np.sin(a), np.zeros(n + 1)])
+
+_CHASE_LOS_MARGIN = 0.5   # extra clearance added to obstacle bounds for camera LOS test (m)
+
+def _aabb_hit(lo, hi, origin, delta):
+    """Parametric slab test: True if segment origin→origin+delta intersects AABB [lo, hi]."""
+    t0, t1 = 0.0, 1.0
+    for k in range(3):
+        if abs(delta[k]) < 1e-9:
+            if origin[k] < lo[k] or origin[k] > hi[k]:
+                return False
+        else:
+            a = (lo[k] - origin[k]) / delta[k]
+            b = (hi[k] - origin[k]) / delta[k]
+            t0 = max(t0, min(a, b))
+            t1 = min(t1, max(a, b))
+            if t0 > t1:
+                return False
+    return True
+
+def _los_clear(az_deg, el_deg, cx, cy, cz):
+    """True if the camera-eye → drone segment is not blocked by any obstacle AABB."""
+    az = np.radians(az_deg)
+    el = np.radians(el_deg)
+    # vispy TurntableCamera: eye = center + dist*(sin(az)*cos(el), -cos(az)*cos(el), sin(el))
+    ex = cx + CHASE_DIST * np.sin(az) * np.cos(el)
+    ey = cy - CHASE_DIST * np.cos(az) * np.cos(el)
+    ez = cz + CHASE_DIST * np.sin(el)
+    rdx, rdy, rdz = cx - ex, cy - ey, cz - ez   # direction: eye → drone
+    m = _CHASE_LOS_MARGIN
+    for obs in obstacles:
+        ox, oy, sz = obs["x"], obs["y"], obs["size"]
+        if _aabb_hit(
+            np.array([ox - sz - m, oy - sz - m,      -m]),
+            np.array([ox + sz + m, oy + sz + m, 2*sz + m]),
+            np.array([ex, ey, ez]),
+            np.array([rdx, rdy, rdz]),
+        ):
+            return False
+    return True
 
 def _frustum_pts(dx, dy, dz, yaw, pitch, half_h, half_v, length):
     """NaN-separated line segments forming a pitched camera frustum pyramid.
@@ -240,6 +280,7 @@ view.camera = cam   # sets cam.parent = view.scene internally
 _cam_center = np.array([_dx0, _dy0, _dz0])
 # azimuth places camera on opposite side of drone from target
 _cam_az     = [float(np.degrees(np.arctan2(_dx0 - _tx0, _ty0 - _dy0)))]
+_cam_el     = [CHASE_EL]
 
 # ── World geometry ────────────────────────────────────────────────────────────
 
@@ -531,16 +572,28 @@ def _on_timer(event):
     pitch_des     = pitch + pitch_rate / ATT_KP
     tsim  = float(row["t"])
 
-    # ── Chase camera — always directly behind drone along its yaw heading ────
+    # ── Chase camera — obstacle-avoiding azimuth search ─────────────────────
     _cam_center[:] += CAM_SMOOTH * (np.array([dx, dy, dz]) - _cam_center)
-    # vispy eye = center + dist*(sin(az)*cos(el), -cos(az)*cos(el), sin(el))
-    # For eye to lie in the -yaw direction: az = atan2(-cos(yaw), sin(yaw))
-    az_target = float(np.degrees(np.arctan2(-np.cos(yaw), np.sin(yaw))))
-    d_az = (az_target - _cam_az[0] + 180.0) % 360.0 - 180.0
+    cx_, cy_, cz_ = _cam_center[0], _cam_center[1], _cam_center[2]
+    # Ideal azimuth: camera eye sits directly behind the drone along its yaw.
+    # vispy formula: eye = center + dist*(sin(az)*cos(el), -cos(az)*cos(el), sin(el))
+    az_ideal = float(np.degrees(np.arctan2(-np.cos(yaw), np.sin(yaw))))
+    # Sweep candidates in order of preference; pick first unobstructed one.
+    az_winner = None
+    for off in _AZ_OFFSETS:
+        if _los_clear(az_ideal + off, _cam_el[0], cx_, cy_, cz_):
+            az_winner = az_ideal + off
+            break
+    el_target = CHASE_EL
+    if az_winner is None:       # all azimuths blocked — rise above the obstacle
+        az_winner = az_ideal
+        el_target = 75.0
+    d_az = (az_winner - _cam_az[0] + 180.0) % 360.0 - 180.0
     _cam_az[0] += CAM_SMOOTH_AZ * d_az
-    cam.center    = (_cam_center[0], _cam_center[1], _cam_center[2])
+    _cam_el[0] += CAM_SMOOTH_AZ * (el_target - _cam_el[0])
+    cam.center    = (cx_, cy_, cz_)
     cam.azimuth   = _cam_az[0]
-    cam.elevation = CHASE_EL
+    cam.elevation = _cam_el[0]
     cam.distance  = CHASE_DIST
 
     # ── Obstacles — ESDF colour + visible only when surface in sensing range ────
