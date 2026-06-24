@@ -8,4 +8,3 @@ controller:
   ki_pos: 0.0
   kp_vel: 1.0
   ki_vel: 0.0
-  desired_distance: 4.0

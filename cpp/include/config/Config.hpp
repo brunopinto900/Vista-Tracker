@@ -22,37 +22,39 @@ struct DroneConfig
 
 struct ControllerConfig
 {
-    double kp_pos           = 1.5;  // outer position loop P gain (pos error → vel setpoint)
-    double ki_pos           = 0.0;  // outer position loop I gain (eliminates pos steady-state error)
-    double kp_vel           = 5.0;  // inner velocity loop P gain (vel error → acceleration)
-    double ki_vel           = 0.2;  // inner velocity loop I gain (eliminates vel steady-state error)
-    double desired_distance = 4.0;
-    double attitude_kp      = 5.0;  // roll/pitch inner loop (rad/s per rad)
-    double yaw_kp           = 0.3;  // yaw inner loop (rad/s per rad) — slower plant
+    double kp_pos                = 1.5;    // outer position loop P gain (pos error → vel setpoint)
+    double ki_pos                = 0.0;    // outer position loop I gain (eliminates pos steady-state error)
+    double kp_vel                = 5.0;    // inner velocity loop P gain (vel error → acceleration)
+    double ki_vel                = 0.2;    // inner velocity loop I gain (eliminates vel steady-state error)
+    double attitude_kp           = 6.680;  // roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
+    double yaw_kp                = 0.287;  // yaw inner loop (rad/s per rad); wn=4 rad/s plant
+    double max_tilt_rad          = 0.5;    // tilt limit (~28°) for roll and pitch
+    double max_thrust            = 2.0;    // normalised thrust ceiling
+    double max_ipos_contribution = 1.0;    // max m/s from position integral
+    double max_ivel_contribution = 4.0;    // max m/s² from velocity integral
 };
 
 struct TrackingCameraConfig
 {
-    double fov_deg  = 60.0;  // horizontal full FOV (degrees, ±30°)
-    double vfov_deg = 30.0;  // vertical half-angle (degrees, ±30°)
+    double fov_deg = 60.0;  // horizontal full FOV (degrees, ±30°)
+    // vfov is derived at load time: atan(tan(fov/2) * 9/16) for a 16:9 sensor
 };
 
 struct TargetConfig
 {
     double height  = 1.80;  // m — total person height
     double width   = 0.50;  // m — shoulder width (physical extent)
-    double track_z = 1.40;  // m — camera aim point (upper back / head level)
+    double track_z = 0.90;  // m — camera aim point (vertical centre of person = height/2)
 };
 
 struct PlannerConfig
 {
     // Waypoint sequencer
-    double standoff_dist    = 4.0;   // computed at runtime from FOV bounding-box geometry
     double wp_reach_thresh  = 0.5;   // advance waypoint when within this radius (m)
     double replan_goal_dist = 1.5;   // replan when goal shifts more than this (m)
     // Visibility-aware altitude
-    double theta_des_deg    = 20.0;  // desired viewing angle of target below horizon (deg)
-    double theta_safe_deg   =  5.0;  // FOV safety margin (deg)
+    double theta_des_deg    = 13.0;  // desired viewing angle of target below horizon (deg)
+    double theta_safe_deg   =  5.0;  // FOV safety margin — 5° on each side, controls ground visibility
     double min_z            = 2.0;   // altitude floor (m) — safety clearance above person
     // RRT
     double step_size        = 0.8;   // extension step (m)

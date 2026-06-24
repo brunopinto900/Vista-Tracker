@@ -384,28 +384,38 @@ _pip_ground = visuals.Plane(
 )
 _pip_ground.transform = transforms.STTransform(translate=(_cx_w, _cy_w, 0.0))
 
-# PiP obstacles (same STTransform positions, separate visuals)
+# PiP obstacles — Box visuals in _pip_vb.scene so the PiP TurntableCamera handles
+# perspective scaling.  depth_test=False bypasses the depth-buffer contamination
+# from the main 3-D scene (the ViewBox clears its colour region but not its depth
+# region, so meshes with depth_test=True never pass the depth test).
 _pip_obs_boxes = []
-for obs in obstacles:
-    sz  = obs["size"]
-    box = visuals.Box(
-        width=2*sz, height=2*sz, depth=2*sz,
+for _obs in obstacles:
+    _sz  = _obs["size"]
+    _box = visuals.Box(
+        width=2*_sz, height=2*_sz, depth=2*_sz,
         color=(0.8, 0.15, 0.05, 0.88),
         edge_color=(0.20, 0.04, 0.01, 0.7),
         parent=_pip_vb.scene,
     )
-    box.transform = transforms.STTransform(translate=(obs["x"], obs["y"], float(sz)))
-    _pip_obs_boxes.append(box)
+    _box.transform = transforms.STTransform(translate=(_obs["x"], _obs["y"], float(_sz)))
+    _box.mesh.set_gl_state('translucent', depth_test=False)
+    _box.border.set_gl_state('translucent', depth_test=False)
+    _pip_obs_boxes.append(_box)
 
-# PiP person — 2D projected stick figure drawn on canvas.scene (not _pip_vb.scene).
-# 3D Meshes in a ViewBox overlay fail the depth test against the main scene's depth
-# buffer (vispy doesn't clear the depth region for overlay ViewBoxes), so they never
-# render.  Projecting through _project_to_pip() sidesteps this entirely.
-_pip_person_2d = visuals.Line(
-    parent=canvas.scene, color=(0.82, 0.28, 0.08, 0.95), width=2.0, method="gl",
-    connect="segments",
-)
-_pip_person_2d.visible = False
+# PiP person — cylinder + head mesh in _pip_vb.scene so the PiP TurntableCamera
+# handles perspective scaling natively.  depth_test=False bypasses the depth-buffer
+# contamination from the main 3-D scene (same fix as _pip_obs_boxes).
+_pip_person_cyl = visuals.Mesh(meshdata=_cyl_md, color=(0.82, 0.28, 0.08, 0.95),
+                                shading="flat", parent=_pip_vb.scene)
+_pip_person_cyl.set_gl_state('translucent', depth_test=False)
+_pip_cyl_tr = transforms.STTransform()
+_pip_person_cyl.transform = _pip_cyl_tr
+
+_pip_person_head = visuals.Mesh(meshdata=_head_md, color=(1.0, 0.78, 0.58, 1.0),
+                                 shading="smooth", parent=_pip_vb.scene)
+_pip_person_head.set_gl_state('translucent', depth_test=False)
+_pip_head_tr = transforms.STTransform()
+_pip_person_head.transform = _pip_head_tr
 
 # PiP label + crosshair
 _ch     = 7
@@ -535,9 +545,9 @@ def _on_timer(event):
     for obs, box, pip_box, mini_ln in zip(obstacles, _obs_boxes, _pip_obs_boxes, _mini_obs_lines):
         d_obs    = np.hypot(dx - obs["x"], dy - obs["y"])
         in_range = max(0.0, d_obs - obs["size"]) <= CAMERA_RANGE
-        box.visible      = in_range
-        pip_box.visible  = in_range
-        mini_ln.visible  = in_range
+        box.visible     = in_range
+        pip_box.visible = in_range
+        mini_ln.visible = in_range
         if in_range:
             c = _esdf_color(dx, dy, obs)
             box.mesh.color     = c
@@ -579,25 +589,30 @@ def _on_timer(event):
         _drone_trail_3d.set_data(pos=np.array(_drone_trail_world, dtype=np.float32))
         _drone_trail_3d.visible = True
 
-    # ── PiP camera: body-fixed view via bore-endpoint centering ─────────────
-    # _pip_camera_angles(eye→center) reliably renders (direct bore formula gives
-    # a black viewport in vispy).  Center the TurntableCamera on the point where
-    # the drone boresight intersects the target's horizontal distance, so body
-    # pitch shifts the target up/down in frame exactly as a body-fixed camera.
-    #
-    #   tz_bore = dz - horiz * tan(pitch)
-    #   pitch=0  → tz_bore = dz (horizontal view, target below centre)
-    #   pitch=α  → tz_bore ≈ tz  (target near centre)
-    horiz_dist_pip = max(float(np.hypot(tx - dx, ty - dy)), 0.01)
-    tz_bore = float(dz - horiz_dist_pip * np.tan(pitch))
-    az_pip, el_pip, dist_pip = _pip_camera_angles(dx, dy, dz, tx, ty, tz_bore)
-    _pip_cam.center    = (float(tx), float(ty), float(tz_bore))
+    # ── PiP camera: body-fixed view along actual drone yaw + pitch ──────────
+    # Boresight = drone forward axis.  The center point is placed along the
+    # boresight at the 3-D distance to the target's mid-body so perspective
+    # scaling matches the real sensor.  When yaw or pitch error is non-zero
+    # the target drifts away from PiP centre, showing the true tracking error.
+    bore_pip = np.array([np.cos(yaw) * np.cos(pitch),
+                         np.sin(yaw) * np.cos(pitch),
+                         -np.sin(pitch)])
+    dist_3d  = max(float(np.linalg.norm(
+        np.array([tx - dx, ty - dy, PERSON_TRACK_Z - dz]))), 0.5)
+    cx_pip   = float(dx + bore_pip[0] * dist_3d)
+    cy_pip   = float(dy + bore_pip[1] * dist_3d)
+    cz_pip   = float(dz + bore_pip[2] * dist_3d)
+    az_pip, el_pip, dist_pip = _pip_camera_angles(dx, dy, dz, cx_pip, cy_pip, cz_pip)
+    _pip_cam.center    = (cx_pip, cy_pip, cz_pip)
     _pip_cam.distance  = float(dist_pip)
     _pip_cam.azimuth   = float(az_pip)
     _pip_cam.elevation = float(el_pip)
 
-    # ── Bounding box + person stick figure — 2-D overlays on PiP image ─────────
-    # Project key 3-D points through the PiP camera into canvas pixel coordinates.
+    # ── PiP person cylinder + head ────────────────────────────────────────────
+    _pip_cyl_tr.translate  = (tx, ty, _BODY_CEN_Z)
+    _pip_head_tr.translate = (tx, ty, _HEAD_CEN_Z)
+
+    # ── Bounding box — 2-D overlay projected onto PiP canvas pixels ───────────
     _vdx, _vdy = tx - dx, ty - dy
     _vd_n = max(np.hypot(_vdx, _vdy), 0.01)
     _rvx, _rvy = -_vdy / _vd_n, _vdx / _vd_n
@@ -609,14 +624,6 @@ def _on_timer(event):
         [tx - _bw * _rvx, ty - _bw * _rvy, PERSON_HEIGHT],
     ]
     _sc = [_project_to_pip(c) for c in _corners_3d]
-    # Stick figure: spine (feet→head) + shoulders + hip bar
-    _p_feet   = _project_to_pip([tx, ty, 0.0])
-    _p_head   = _project_to_pip([tx, ty, PERSON_HEIGHT])
-    _p_ls     = _project_to_pip([tx - _bw * _rvx, ty - _bw * _rvy, _BODY_LEN])
-    _p_rs     = _project_to_pip([tx + _bw * _rvx, ty + _bw * _rvy, _BODY_LEN])
-    _p_lh     = _project_to_pip([tx - _bw * _rvx, ty - _bw * _rvy, 0.0])
-    _p_rh     = _project_to_pip([tx + _bw * _rvx, ty + _bw * _rvy, 0.0])
-    _fig_pts  = [_p_feet, _p_head, _p_ls, _p_rs, _p_lh, _p_rh]
     if all(s is not None for s in _sc):
         _xs = [s[0] for s in _sc]
         _ys = [s[1] for s in _sc]
@@ -630,15 +637,6 @@ def _on_timer(event):
         _pip_bbox_2d.visible = True
     else:
         _pip_bbox_2d.visible = False
-    if all(s is not None for s in _fig_pts):
-        _pip_person_2d.set_data(pos=np.array([
-            [_p_feet[0], _p_feet[1]], [_p_head[0], _p_head[1]],  # spine
-            [_p_ls[0],   _p_ls[1]],   [_p_rs[0],   _p_rs[1]],   # shoulders
-            [_p_lh[0],   _p_lh[1]],   [_p_rh[0],   _p_rh[1]],   # hips
-        ], dtype=np.float32))
-        _pip_person_2d.visible = True
-    else:
-        _pip_person_2d.visible = False
 
 
     # ── Mini-map ──────────────────────────────────────────────────────────────

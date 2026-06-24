@@ -59,19 +59,21 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
 
     if (auto s = n["controller"])
     {
-        if (s["kp_pos"])           cfg.controller.kp_pos           = s["kp_pos"].as<double>();
-        if (s["ki_pos"])           cfg.controller.ki_pos           = s["ki_pos"].as<double>();
-        if (s["kp_vel"])           cfg.controller.kp_vel           = s["kp_vel"].as<double>();
-        if (s["ki_vel"])           cfg.controller.ki_vel           = s["ki_vel"].as<double>();
-        if (s["desired_distance"]) cfg.controller.desired_distance = s["desired_distance"].as<double>();
-        if (s["attitude_kp"])      cfg.controller.attitude_kp      = s["attitude_kp"].as<double>();
-        if (s["yaw_kp"])           cfg.controller.yaw_kp           = s["yaw_kp"].as<double>();
+        if (s["kp_pos"])                cfg.controller.kp_pos                = s["kp_pos"].as<double>();
+        if (s["ki_pos"])                cfg.controller.ki_pos                = s["ki_pos"].as<double>();
+        if (s["kp_vel"])                cfg.controller.kp_vel                = s["kp_vel"].as<double>();
+        if (s["ki_vel"])                cfg.controller.ki_vel                = s["ki_vel"].as<double>();
+        if (s["attitude_kp"])           cfg.controller.attitude_kp           = s["attitude_kp"].as<double>();
+        if (s["yaw_kp"])                cfg.controller.yaw_kp                = s["yaw_kp"].as<double>();
+        if (s["max_tilt_rad"])          cfg.controller.max_tilt_rad          = s["max_tilt_rad"].as<double>();
+        if (s["max_thrust"])            cfg.controller.max_thrust            = s["max_thrust"].as<double>();
+        if (s["max_ipos_contribution"]) cfg.controller.max_ipos_contribution = s["max_ipos_contribution"].as<double>();
+        if (s["max_ivel_contribution"]) cfg.controller.max_ivel_contribution = s["max_ivel_contribution"].as<double>();
     }
 
     if (auto s = n["tracking_camera"])
     {
-        if (s["fov"])  cfg.tracking_camera.fov_deg  = s["fov"].as<double>();
-        if (s["vfov"]) cfg.tracking_camera.vfov_deg = s["vfov"].as<double>();
+        if (s["fov"]) cfg.tracking_camera.fov_deg = s["fov"].as<double>();
     }
 
     if (auto s = n["target"])

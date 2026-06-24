@@ -12,8 +12,12 @@ class PIDController : public IController
 {
 public:
     PIDController(double kp_pos, double ki_pos, double kp_vel, double ki_vel,
-                  double attitude_kp = 5.0,
-                  double yaw_kp      = 0.3);
+                  double attitude_kp           = 6.680,
+                  double yaw_kp                = 0.287,
+                  double max_tilt_rad          = 0.5,
+                  double max_thrust            = 2.0,
+                  double max_ipos_contribution = 1.0,
+                  double max_ivel_contribution = 4.0);
 
     ControlCommand update(
         const State&     drone,
@@ -26,4 +30,8 @@ private:
     PID    pid_vx_, pid_vy_, pid_vz_;  // velocity-error integrators (kp_vel, ki_vel)
     double attitude_kp_;
     double yaw_kp_;
+    double max_tilt_rad_;
+    double max_thrust_;
+    double max_ipos_contribution_;
+    double max_ivel_contribution_;
 };

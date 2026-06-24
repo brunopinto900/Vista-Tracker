@@ -17,7 +17,7 @@ camera:
 
 tracking_camera:
   fov:    60.0           # horizontal field of view (degrees) — tracking camera (±30°)
-  vfov:   30.0           # vertical half-angle (degrees) — pitch band within which target stays in frame (±30°)
+  # vfov is derived from fov for a 16:9 sensor: atan(tan(fov/2) * 9/16) ≈ ±18°
 
 target:
   height:    1.80        # m — person total height
@@ -29,20 +29,23 @@ estimator:
   motion_model: CV      # CV | CTRV | CA
 
 controller:
-  kp_pos:           1.6    # outer position loop P gain (pos error → vel setpoint)
-  ki_pos:           0.0    # outer position loop I gain (eliminates pos steady-state error)
-  kp_vel:           5.0    # inner velocity loop P gain (vel error → acceleration)
-  ki_vel:           0.2    # inner velocity loop I gain (eliminates steady-state vel error)
-  desired_distance: 3.3    # approx; C++ computes exact from FOV bounding-box geometry
-  attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
-  yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
+  kp_pos:                1.6    # outer position loop P gain (pos error → vel setpoint)
+  ki_pos:                0.0    # outer position loop I gain (eliminates pos steady-state error)
+  kp_vel:                5.0    # inner velocity loop P gain (vel error → acceleration)
+  ki_vel:                0.2    # inner velocity loop I gain (eliminates steady-state vel error)
+  attitude_kp:           6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
+  yaw_kp:                0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
+  max_tilt_rad:          0.5    # roll/pitch tilt ceiling (rad, ~28°)
+  max_thrust:            2.0    # normalised thrust ceiling
+  max_ipos_contribution: 1.0    # max position-integral contribution to vel setpoint (m/s)
+  max_ivel_contribution: 4.0    # max velocity-integral contribution to acceleration (m/s²)
 
 planner:
   # standoff_dist is computed at runtime from bounding-box FOV geometry; not a YAML key.
   wp_reach_thresh:  0.5    # advance to next waypoint when drone is within this radius (m)
   replan_goal_dist: 4.0    # trigger replan when standoff goal shifts more than this (m)
   theta_des:       13.0    # desired viewing angle of target below horizon (degrees)
-  theta_safe:       3.0    # FOV safety margin — reduces usable angle by this much (degrees)
+  theta_safe:       5.0    # FOV safety margin — reserves 5° on each side; also controls ground visibility below feet
   min_z:            2.0    # altitude floor (m) — clearance above person height (1.80 m)
   rrt:
     step_size:      0.8    # RRT extension step (m)

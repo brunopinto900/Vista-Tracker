@@ -13,9 +13,6 @@ drone_init:
   y: 0.0
   z: 3.0
 
-controller:
-  desired_distance: 3.3    # approx; C++ computes exact from FOV bounding-box geometry
-
 target_trajectory:
   type: person
   max_accel: 0.5

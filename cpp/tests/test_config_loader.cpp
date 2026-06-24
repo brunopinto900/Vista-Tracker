@@ -12,8 +12,8 @@ TEST(ConfigLoader, StandaloneLoadsAllFields)
     EXPECT_DOUBLE_EQ(cfg.sim.T,                    10.0);
     EXPECT_EQ       (cfg.estimator.horizon,         10);
     EXPECT_EQ       (cfg.estimator.motion_model,    "CA");
-    EXPECT_DOUBLE_EQ(cfg.controller.kp_pos,          1.5);
-    EXPECT_DOUBLE_EQ(cfg.controller.desired_distance, 5.0);
+    EXPECT_DOUBLE_EQ(cfg.controller.kp_pos, 1.5);
+    EXPECT_DOUBLE_EQ(cfg.controller.kp_vel, 1.0);
     EXPECT_DOUBLE_EQ(cfg.drone_init.x,              1.0);
     EXPECT_DOUBLE_EQ(cfg.drone_init.y,              2.0);
     EXPECT_DOUBLE_EQ(cfg.drone_init.z,              3.0);

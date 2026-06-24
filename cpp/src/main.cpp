@@ -100,9 +100,8 @@ int main(int argc, char* argv[])
               << " ki_pos=" << cfg.controller.ki_pos
               << " kp_vel=" << cfg.controller.kp_vel
               << " ki_vel=" << cfg.controller.ki_vel
-              << " desired_distance=" << cfg.controller.desired_distance << "\n"
-              << "[config] tracking_camera  fov=" << cfg.tracking_camera.fov_deg
-              << "° vfov=±" << cfg.tracking_camera.vfov_deg << "°\n"
+              << " max_tilt=" << cfg.controller.max_tilt_rad << " rad\n"
+              << "[config] tracking_camera  hfov=" << cfg.tracking_camera.fov_deg << "°\n"
               << "[config] target          height=" << cfg.target.height
               << " width=" << cfg.target.width
               << " track_z=" << cfg.target.track_z << "\n"
@@ -174,7 +173,11 @@ int main(int argc, char* argv[])
                                      cfg.controller.kp_vel,
                                      cfg.controller.ki_vel,
                                      cfg.controller.attitude_kp,
-                                     cfg.controller.yaw_kp);
+                                     cfg.controller.yaw_kp,
+                                     cfg.controller.max_tilt_rad,
+                                     cfg.controller.max_thrust,
+                                     cfg.controller.max_ipos_contribution,
+                                     cfg.controller.max_ivel_contribution);
 
     std::ofstream file("../../data/log.csv");
 

@@ -4,22 +4,23 @@
 #include <algorithm>
 #include <cstdio>
 
-static constexpr double kG              = 9.81;
-static constexpr double kMaxAngle       = 0.5;   // rad (~28°) — tilt limit
-static constexpr double kMaxThrust      = 2.0;   // normalised
-static constexpr double kMaxIposCont    = 1.0;   // max m/s contribution from position integral
-static constexpr double kMaxIvelCont    = 4.0;   // max m/s² contribution from velocity integral
-static constexpr double kCamPitchZGain  = 3.0;   // (m/s)/rad — climb rate added per radian of pitch deficit
+static constexpr double kG = 9.81;
 
 PIDController::PIDController(double kp_pos, double ki_pos, double kp_vel, double ki_vel,
-                             double attitude_kp, double yaw_kp)
+                             double attitude_kp, double yaw_kp,
+                             double max_tilt_rad, double max_thrust,
+                             double max_ipos_contribution, double max_ivel_contribution)
     : kp_pos_(kp_pos)
     , ki_pos_(ki_pos)
-    , pid_vx_(kp_vel, ki_vel)
-    , pid_vy_(kp_vel, ki_vel)
-    , pid_vz_(kp_vel, ki_vel)
+    , pid_vx_(kp_vel, ki_vel, max_ivel_contribution)
+    , pid_vy_(kp_vel, ki_vel, max_ivel_contribution)
+    , pid_vz_(kp_vel, ki_vel, max_ivel_contribution)
     , attitude_kp_(attitude_kp)
     , yaw_kp_(yaw_kp)
+    , max_tilt_rad_(max_tilt_rad)
+    , max_thrust_(max_thrust)
+    , max_ipos_contribution_(max_ipos_contribution)
+    , max_ivel_contribution_(max_ivel_contribution)
 {}
 
 ControlCommand PIDController::update(
@@ -36,7 +37,7 @@ ControlCommand PIDController::update(
     ip_z_ += ez * dt;
     // Anti-windup: clamp integral so its velocity contribution stays bounded
     if (ki_pos_ > 1e-9) {
-        const double lim = kMaxIposCont / ki_pos_;
+        const double lim = max_ipos_contribution_ / ki_pos_;
         ip_x_ = std::clamp(ip_x_, -lim, lim);
         ip_y_ = std::clamp(ip_y_, -lim, lim);
         ip_z_ = std::clamp(ip_z_, -lim, lim);
@@ -56,31 +57,21 @@ ControlCommand PIDController::update(
     const double ax_body =  ax_des * cy + ay_des * sy;
     const double ay_body = -ax_des * sy + ay_des * cy;
 
-    // Camera aim takes full priority: it gets its allocation first (up to kMaxAngle).
-    // Propulsion pitch is then clamped to whatever budget remains so the total
-    // stays in [-kMaxAngle, kMaxAngle] without silently stealing from the camera aim.
-    const double cam_pitch  = std::clamp(reference.camera_pitch, -kMaxAngle, kMaxAngle);
-    const double prop_pitch = std::atan2(ax_body, kG);
-    const double pitch_des  = cam_pitch + std::clamp(prop_pitch,
-                                                      -kMaxAngle - cam_pitch,
-                                                       kMaxAngle - cam_pitch);
+    // Camera aim gets first allocation (up to max_tilt_rad_).
+    // Propulsion gets a symmetric budget of (max_tilt_rad_ - cam_pitch) in each direction:
+    // braking cannot steal more tilt from the camera than forward flight contributes,
+    // so the person stays in frame during deceleration as well as approach.
+    // Altitude reference is handled geometrically by the planner (ref.z).
+    const double cam_pitch   = std::clamp(reference.camera_pitch, 0.0, max_tilt_rad_);
+    const double prop_pitch  = std::atan2(ax_body, kG);
+    const double prop_budget = max_tilt_rad_ - cam_pitch;
+    const double pitch_des   = cam_pitch + std::clamp(prop_pitch, -prop_budget, prop_budget);
 
-    // When prop_pitch fights cam_pitch (e.g. braking nose-up vs camera nose-down),
-    // climb to steepen the natural camera angle and absorb the conflict.
-    const double pitch_deficit  = std::min(0.0, cam_pitch + prop_pitch);
-    const double vz_sp_adjusted = vz_sp - kCamPitchZGain * pitch_deficit;
+    // ── Inner loop z: velocity PID ────────────────────────────────────────────
+    const double az_des = pid_vz_.update(vz_sp - drone.vz, dt);
 
-    // ── Inner loop z: velocity PID with camera-conflict feedforward ───────────
-    const double az_des = pid_vz_.update(vz_sp_adjusted - drone.vz, dt);
-
-    const double vx_body = drone.vx * cy + drone.vy * sy;
-    //std::printf("[PID] cam_pitch=%.4f  prop_pitch=%.4f  pitch_des=%.4f\n",
-    //            cam_pitch, prop_pitch, pitch_des);
-    //std::printf("[PID] vx_body=%.4f (%s)  pitch_deficit=%.4f  vz_ff=%.4f\n",
-    //            vx_body, vx_body >= 0.0 ? "forward" : "backward",
-    //            pitch_deficit, -kCamPitchZGain * pitch_deficit);
-    const double roll_des  = std::clamp(-std::atan2(ay_body, kG), -kMaxAngle, kMaxAngle);
-    const double thrust    = std::clamp((kG + az_des) / kG, 0.0, kMaxThrust);
+    const double roll_des  = std::clamp(-std::atan2(ay_body, kG), -max_tilt_rad_, max_tilt_rad_);
+    const double thrust    = std::clamp((kG + az_des) / kG, 0.0, max_thrust_);
 
     // ── Inner loop: attitude error → body rates ───────────────────────────────
     const double roll_rate  = attitude_kp_ * (roll_des  - drone.roll);
