@@ -93,8 +93,8 @@ GRID_Y_MIN = grid.get("y_min", -12.5)
 GRID_Y_MAX = grid.get("y_max",  12.5)
 
 # ── Camera tuning (edit these) ────────────────────────────────────────────────
-CHASE_DIST    = 10.0   # metres behind drone
-CHASE_EL      = 20.0   # elevation angle above drone (degrees)
+CHASE_DIST    =  9.0   # metres behind drone — close enough to feel dynamic
+CHASE_EL      = 32.0   # elevation above drone (°) — clears ~7 m buildings; 9 m centre block still clips briefly
 CAM_SMOOTH    = 1.0 #0.15   # position follow speed  (0 = frozen … 1 = instant)
 CAM_SMOOTH_AZ = 1.0 #0.10   # heading follow speed   (0 = frozen … 1 = instant)
 
