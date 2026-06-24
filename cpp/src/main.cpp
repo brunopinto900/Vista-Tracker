@@ -111,7 +111,6 @@ int main(int argc, char* argv[])
               << " width=" << cfg.target.width
               << " track_z=" << cfg.target.track_z << "\n"
               << "[config] planner         wp_thresh=" << cfg.planner.wp_reach_thresh
-              << " replan_dist=" << cfg.planner.replan_goal_dist
               << " min_z=" << cfg.planner.min_z << "\n"
               << "[config] planner.rrt     step=" << cfg.planner.step_size
               << " bias=" << cfg.planner.goal_bias
@@ -137,7 +136,6 @@ int main(int argc, char* argv[])
 
     RRTPIDPlanner::Config planner_cfg;
     planner_cfg.wp_reach_thresh  = cfg.planner.wp_reach_thresh;
-    planner_cfg.replan_goal_dist = cfg.planner.replan_goal_dist;
     // Geometric VFOV half-angle for a 16:9 sensor, derived from HFOV.
     // Matches TRACKING_HALF_VFOV = atan(tan(HFOV/2) * 9/16) used in the visualisers.
     {

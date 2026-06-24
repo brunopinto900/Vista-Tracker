@@ -51,11 +51,10 @@ struct PlannerConfig
 {
     // Waypoint sequencer
     double wp_reach_thresh  = 0.5;   // advance waypoint when within this radius (m)
-    double replan_goal_dist = 1.5;   // replan when goal shifts more than this (m)
     // Visibility-aware altitude
     double theta_des_deg    = 13.0;  // desired viewing angle of target below horizon (deg)
     double theta_safe_deg   =  5.0;  // FOV safety margin — 5° on each side, controls ground visibility
-    double min_z            = 2.0;   // altitude floor (m) — safety clearance above person
+    double min_z            = 0.0;   // altitude floor (m) — safety clearance above person
     // RRT
     double ground_strip_m     = 0.30;  // ground strip below feet guaranteed visible (m)
     double path_resample_step = 0.15;  // Catmull-Rom arc-length step (m); 0 = off

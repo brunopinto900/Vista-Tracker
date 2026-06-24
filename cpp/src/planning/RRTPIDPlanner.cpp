@@ -194,7 +194,7 @@ Reference RRTPIDPlanner::update(
     // Path consumption alone does NOT trigger replan — at standoff the path is
     // consumed instantly, which would pin last_goal_ and prevent drift from
     // accumulating for the next obstacle-routing replan.
-    if (path_.empty() || goal_drift > cfg_.replan_goal_dist || rrt_failed_)
+    if (path_.empty() || goal_drift > standoff_dist || rrt_failed_)
     {
         // If the drone is inside the safety-margin zone (e.g. it tracked to a
         // tight standoff right against an obstacle face), RRT cannot grow from

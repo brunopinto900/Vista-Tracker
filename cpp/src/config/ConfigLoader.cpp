@@ -86,7 +86,6 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
     if (auto s = n["planner"])
     {
         if (s["wp_reach_thresh"])  cfg.planner.wp_reach_thresh  = s["wp_reach_thresh"].as<double>();
-        if (s["replan_goal_dist"]) cfg.planner.replan_goal_dist = s["replan_goal_dist"].as<double>();
         if (s["theta_des"])        cfg.planner.theta_des_deg    = s["theta_des"].as<double>();
         if (s["theta_safe"])       cfg.planner.theta_safe_deg   = s["theta_safe"].as<double>();
         if (s["min_z"])            cfg.planner.min_z            = s["min_z"].as<double>();
