@@ -71,20 +71,22 @@ PERSON_TRACK_Z = _target_cfg.get("track_z", 0.90)  # m — camera aim point (ver
 
 # Minimum standoff so the full bounding box [0, PERSON_HEIGHT] fits within the
 # usable VFOV half-angle at the altitude floor — mirrors computeStandoffMin() in main.cpp.
-def _compute_standoff_min(min_z, h_aim, h_top, phi_rad):
+def _compute_standoff_min(min_z, h_aim, h_top, phi_rad, ground_strip=0.30):
     tanp = np.tan(phi_rad)
     def _large_root(A, B, C):
         disc = B*B - 4*A*C
         return (-B + np.sqrt(max(disc, 0.0))) / (2*A)
-    r_head = _large_root(tanp, -(h_top - h_aim), tanp * (min_z - h_aim) * (min_z - h_top))
-    r_feet = _large_root(tanp, -h_aim,            tanp * min_z * (min_z - h_aim))
-    return max(r_head, r_feet)
+    r_head   = _large_root(tanp, -(h_top - h_aim),        tanp * (min_z - h_aim) * (min_z - h_top))
+    r_feet   = _large_root(tanp, -h_aim,                  tanp * min_z * (min_z - h_aim))
+    r_ground = _large_root(tanp, -(h_aim + ground_strip),  tanp * (min_z - h_aim) * (min_z + ground_strip))
+    return max(r_head, r_feet, r_ground)
 
 _planner_cfg     = cfg.get("planner", {})
 _min_z           = _planner_cfg.get("min_z", 2.0)
 _theta_safe_rad  = np.radians(_planner_cfg.get("theta_safe", 3.0))
 _phi_rad         = TRACKING_HALF_VFOV - _theta_safe_rad
-DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
+_ground_strip    = _planner_cfg.get("ground_strip", 0.30)
+DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad, _ground_strip)
 
 grid = cfg.get("world", {}).get("grid", {})
 GRID_X_MIN = grid.get("x_min", -12.5)

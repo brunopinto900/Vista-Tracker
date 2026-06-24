@@ -72,20 +72,22 @@ _target_cfg    = cfg.get("target", {})
 PERSON_HEIGHT  = _target_cfg.get("height",  1.80)
 PERSON_TRACK_Z = _target_cfg.get("track_z", 0.90)
 
-def _compute_standoff_min(min_z, h_aim, h_top, phi_rad):
+def _compute_standoff_min(min_z, h_aim, h_top, phi_rad, ground_strip=0.30):
     tanp = np.tan(phi_rad)
     def _large_root(A, B, C):
         disc = B*B - 4*A*C
         return (-B + np.sqrt(max(disc, 0.0))) / (2*A)
-    r_head = _large_root(tanp, -(h_top - h_aim), tanp * (min_z - h_aim) * (min_z - h_top))
-    r_feet = _large_root(tanp, -h_aim,            tanp * min_z * (min_z - h_aim))
-    return max(r_head, r_feet)
+    r_head   = _large_root(tanp, -(h_top - h_aim),        tanp * (min_z - h_aim) * (min_z - h_top))
+    r_feet   = _large_root(tanp, -h_aim,                  tanp * min_z * (min_z - h_aim))
+    r_ground = _large_root(tanp, -(h_aim + ground_strip),  tanp * (min_z - h_aim) * (min_z + ground_strip))
+    return max(r_head, r_feet, r_ground)
 
 _planner_cfg     = cfg.get("planner", {})
 _min_z           = _planner_cfg.get("min_z", 2.0)
 _theta_safe_rad  = np.radians(_planner_cfg.get("theta_safe", 3.0))
 _phi_rad         = TRACKING_HALF_VFOV - _theta_safe_rad
-DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
+_ground_strip    = _planner_cfg.get("ground_strip", 0.30)
+DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad, _ground_strip)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -99,7 +101,7 @@ _vfov_deg = np.degrees(TRACKING_HALF_VFOV)
 # ── Derived signals ───────────────────────────────────────────────────────────
 
 _drone_z_arr  = df["drone_z"].to_numpy() if "drone_z" in df.columns else np.full(len(df), 2.0)
-_standoff_arr = np.array([_compute_standoff_min(max(z, _min_z), PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
+_standoff_arr = np.array([_compute_standoff_min(max(z, _min_z), PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad, _ground_strip)
                            for z in _drone_z_arr])
 df["distance"]       = np.sqrt((df["target_x"] - df["drone_x"])**2 +
                                 (df["target_y"] - df["drone_y"])**2 +
