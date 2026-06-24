@@ -9,9 +9,9 @@ sim:
   T: 60.0
 
 drone_init:
-  x: -6.0
+  x: -4.0
   y:  0.0
-  z:  4.0
+  z:  3.0
 
 controller:
   kp_pos:      1.870

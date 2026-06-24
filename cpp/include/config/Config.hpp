@@ -57,12 +57,14 @@ struct PlannerConfig
     double theta_safe_deg   =  5.0;  // FOV safety margin — 5° on each side, controls ground visibility
     double min_z            = 2.0;   // altitude floor (m) — safety clearance above person
     // RRT
-    double step_size        = 0.8;   // extension step (m)
-    double goal_bias        = 0.10;  // fraction of samples directed at goal
-    double safety_margin    = 0.3;   // min ESDF clearance (m)
-    double edge_check_res   = 0.1;   // collision-check resolution along edge (m)
-    int    max_iter         = 4000;  // max RRT iterations per call
-    double goal_tol         = 0.5;   // goal-reached radius (m)
+    double ground_strip_m     = 0.30;  // ground strip below feet guaranteed visible (m)
+    double path_resample_step = 0.15;  // Catmull-Rom arc-length step (m); 0 = off
+    double step_size          = 0.8;   // extension step (m)
+    double goal_bias          = 0.10;  // fraction of samples directed at goal
+    double safety_margin      = 0.3;   // min ESDF clearance (m)
+    double edge_check_res     = 0.1;   // collision-check resolution along edge (m)
+    int    max_iter           = 4000;  // max RRT iterations per call
+    double goal_tol           = 0.5;   // goal-reached radius (m)
 };
 
 struct Config

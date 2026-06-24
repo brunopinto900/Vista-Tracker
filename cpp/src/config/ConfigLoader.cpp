@@ -90,6 +90,8 @@ void ConfigLoader::applyNode(Config& cfg, const YAML::Node& n)
         if (s["theta_des"])        cfg.planner.theta_des_deg    = s["theta_des"].as<double>();
         if (s["theta_safe"])       cfg.planner.theta_safe_deg   = s["theta_safe"].as<double>();
         if (s["min_z"])            cfg.planner.min_z            = s["min_z"].as<double>();
+        if (s["ground_strip"])       cfg.planner.ground_strip_m     = s["ground_strip"].as<double>();
+        if (s["path_resample_step"]) cfg.planner.path_resample_step = s["path_resample_step"].as<double>();
         if (auto r = s["rrt"])
         {
             if (r["step_size"])      cfg.planner.step_size      = r["step_size"].as<double>();

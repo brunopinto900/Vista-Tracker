@@ -29,9 +29,11 @@ public:
         double vfov_half_rad    = 0.3142;  // geometric V-FOV half-angle (rad) — 18° for 60° HFOV / 16:9
         double theta_des_rad    = 0.2269;  // desired viewing angle below horizon (rad) — 13°
         double theta_safe_rad   = 0.0524;  // FOV safety margin (rad) — 3°
-        double min_z            = 2.0;     // altitude floor (m)
-        double target_track_z   = 0.90;    // camera aim point height on target (m)
-        double target_height    = 1.80;    // full person height (m) — used for standoff geometry
+        double min_z              = 2.0;     // altitude floor (m)
+        double target_track_z     = 0.90;   // camera aim point height on target (m)
+        double target_height      = 1.80;   // full person height (m) — used for standoff geometry
+        double target_ground_strip = 0.30;  // ground visible below feet (m); adds third standoff constraint
+        double path_resample_step = 0.15;   // arc-length step for Catmull-Rom resampling (m); 0 = off
         RRTConfig rrt{};
     };
 

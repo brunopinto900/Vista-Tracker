@@ -44,13 +44,15 @@ planner:
   # standoff_dist is computed at runtime from bounding-box FOV geometry; not a YAML key.
   wp_reach_thresh:  0.5    # advance to next waypoint when drone is within this radius (m)
   replan_goal_dist: 4.0    # trigger replan when standoff goal shifts more than this (m)
-  theta_des:       13.0    # desired viewing angle of target below horizon (degrees)
-  theta_safe:       5.0    # FOV safety margin — reserves 5° on each side; also controls ground visibility below feet
+  theta_des:        13.0    # desired viewing angle of target below horizon (degrees)
+  theta_safe:       5.0    # FOV safety margin — 5° above head and 5° between ground_strip and bottom of frame
   min_z:            2.0    # altitude floor (m) — clearance above person height (1.80 m)
+  ground_strip:     0.30   # ground visible below feet (m) — forces wider standoff to guarantee this strip
+  path_resample_step: 0.2  # 0.15 Catmull-Rom arc-length step (m); set 0 to disable smoothing
   rrt:
     step_size:      0.8    # RRT extension step (m)
     goal_bias:      0.10   # fraction of samples directed at goal
-    safety_margin:  0.3    # min clearance from obstacle surface (m)
+    safety_margin:  0.5    # min clearance from obstacle surface (m)
     edge_check_res: 0.1    # collision-check sample spacing along edge (m)
     max_iter:       4000   # RRT iteration budget per replan call
     goal_tol:       0.5    # goal-reached radius (m)

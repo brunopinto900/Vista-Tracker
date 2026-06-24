@@ -21,9 +21,11 @@ namespace fs = std::filesystem;
 // boresight aimed at h_aim.  Each constraint reduces to a quadratic in r;
 // the binding one (larger root) is returned.
 //
-//   Head: tan(phi)*r² - (h_top-h_aim)*r + tan(phi)*(min_z-h_aim)*(min_z-h_top) = 0
-//   Feet: tan(phi)*r² - h_aim*r         + tan(phi)*min_z*(min_z-h_aim)          = 0
-static double computeStandoffMin(double min_z, double h_aim, double h_top, double phi_rad)
+//   Head:   tan(phi)*r² − (h_top−h_aim)*r    + tan(phi)*(min_z−h_aim)*(min_z−h_top)    = 0
+//   Feet:   tan(phi)*r² − h_aim*r            + tan(phi)*min_z*(min_z−h_aim)             = 0
+//   Ground: tan(phi)*r² − (h_aim+strip)*r    + tan(phi)*(min_z−h_aim)*(min_z+strip)     = 0
+static double computeStandoffMin(double min_z, double h_aim, double h_top,
+                                 double phi_rad, double ground_strip)
 {
     const double tanp = std::tan(phi_rad);
 
@@ -32,13 +34,16 @@ static double computeStandoffMin(double min_z, double h_aim, double h_top, doubl
         return (-B + std::sqrt(std::max(disc, 0.0))) / (2.0 * A);
     };
 
-    const double r_head = largeRoot(tanp,
-                                     -(h_top - h_aim),
-                                     tanp * (min_z - h_aim) * (min_z - h_top));
-    const double r_feet = largeRoot(tanp,
-                                     -h_aim,
-                                     tanp * min_z * (min_z - h_aim));
-    return std::max(r_head, r_feet);
+    const double r_head  = largeRoot(tanp,
+                                      -(h_top - h_aim),
+                                      tanp * (min_z - h_aim) * (min_z - h_top));
+    const double r_feet  = largeRoot(tanp,
+                                      -h_aim,
+                                      tanp * min_z * (min_z - h_aim));
+    const double r_ground = largeRoot(tanp,
+                                       -(h_aim + ground_strip),
+                                       tanp * (min_z - h_aim) * (min_z + ground_strip));
+    return std::max({r_head, r_feet, r_ground});
 }
 
 static const std::string kDefaultConfig   = "../../config/config.yaml";
@@ -141,20 +146,23 @@ int main(int argc, char* argv[])
     }
     planner_cfg.theta_des_rad  = cfg.planner.theta_des_deg  * M_PI / 180.0;
     planner_cfg.theta_safe_rad = cfg.planner.theta_safe_deg * M_PI / 180.0;
-    planner_cfg.min_z          = cfg.planner.min_z;
-    planner_cfg.target_track_z = cfg.target.track_z;
-    planner_cfg.target_height  = cfg.target.height;
+    planner_cfg.min_z              = cfg.planner.min_z;
+    planner_cfg.target_track_z      = cfg.target.track_z;
+    planner_cfg.target_height       = cfg.target.height;
+    planner_cfg.target_ground_strip = cfg.planner.ground_strip_m;
+    planner_cfg.path_resample_step  = cfg.planner.path_resample_step;
     // Log the floor-altitude standoff as a reference value.
     {
         const double phi_rad      = planner_cfg.vfov_half_rad - planner_cfg.theta_safe_rad;
         const double standoff_min = computeStandoffMin(
             planner_cfg.min_z, planner_cfg.target_track_z,
-            cfg.target.height, phi_rad);
+            cfg.target.height, phi_rad, planner_cfg.target_ground_strip);
         std::cout << "[planner] standoff_at_min_z = " << standoff_min
-                  << " m  (bounding-box FOV: min_z=" << planner_cfg.min_z
+                  << " m  (bounding-box+ground FOV: min_z=" << planner_cfg.min_z
                   << " h_aim=" << planner_cfg.target_track_z
                   << " h_top=" << cfg.target.height
-                  << " phi=" << phi_rad * 180.0 / M_PI << "°) — computed per-step from drone.z\n";
+                  << " ground_strip=" << planner_cfg.target_ground_strip
+                  << " m  phi=" << phi_rad * 180.0 / M_PI << "°) — computed per-step from drone.z\n";
     }
     planner_cfg.rrt.step_size      = cfg.planner.step_size;
     planner_cfg.rrt.goal_bias      = cfg.planner.goal_bias;
