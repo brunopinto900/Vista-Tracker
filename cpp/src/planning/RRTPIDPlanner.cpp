@@ -1,6 +1,7 @@
 #include "planning/RRTPIDPlanner.hpp"
 #include "models/State.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 RRTPIDPlanner::RRTPIDPlanner(const Config& cfg, unsigned rrt_seed)
@@ -149,22 +150,29 @@ Reference RRTPIDPlanner::update(
         ++wp_idx_;
     }
 
-    // Camera pitch: angle the tracking camera must look down to centre on track_z.
-    // horiz_dist is the 2-D ground distance from drone to target.
-    const double horiz_dist  = std::hypot(t.x - drone.x, t.y - drone.y);
-    const double camera_pitch = (horiz_dist < 1e-6)
-        ? M_PI_2
-        : std::atan2(drone.z - cfg_.target_track_z, horiz_dist);
+    // Visibility-Aware Target Following (NED formulation, adapted to ENU).
+    //
+    // θ_margin = FOV budget remaining after body tilt and safety reserve:
+    //   θ_margin = θ_FOV/2 − |θ_body| − θ_safe
+    //
+    // θ_ref is the actual viewing angle commanded (clamped to margin so the
+    // target stays in-frame even when body pitches for forward propulsion).
+    //
+    // h_des = r·tan(θ_ref) gives the altitude the drone must be above track_z
+    // to see the target at the desired angle with the current standoff range r.
+    // When body pitch grows (propulsion load), θ_margin shrinks → h_des shrinks
+    // → drone descends → less pitch required → stable feedback.
+    const double horiz_dist   = std::hypot(t.x - drone.x, t.y - drone.y);
+    const double theta_body   = std::abs(drone.pitch);
+    const double theta_margin = cfg_.vfov_half_rad - theta_body - cfg_.theta_safe_rad;
+    const double theta_ref    = std::clamp(cfg_.theta_des_rad, 0.0,
+                                            std::max(0.0, theta_margin));
+    const double h_des        = horiz_dist * std::tan(theta_ref);
 
-    // Dynamic altitude: fly as high as possible while keeping the target within
-    // 90% of the V-FOV half-angle when the drone is level (pitch ≈ 0 at steady
-    // state). This ensures the target stays in-frame without relying on body pitch.
-    const double z_vfov = cfg_.target_track_z
-                        + horiz_dist * std::tan(0.9 * cfg_.vfov_half_rad);
     Reference ref;
-    ref.z              = std::max(z_vfov, cfg_.min_z);
-    ref.yaw            = std::atan2(t.y - drone.y, t.x - drone.x);
-    ref.camera_pitch   = camera_pitch;
+    ref.z            = std::max(cfg_.target_track_z + h_des, cfg_.min_z);
+    ref.yaw          = std::atan2(t.y - drone.y, t.x - drone.x);
+    ref.camera_pitch = theta_ref;
     ref.deadlock_active = !ideal_feasible;
     ref.deadlock_angle  = !ideal_feasible
         ? std::atan2(goal[1] - t.y, goal[0] - t.x)

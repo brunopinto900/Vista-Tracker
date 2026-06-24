@@ -107,9 +107,16 @@ int main(int argc, char* argv[])
     planner_cfg.standoff_dist    = cfg.planner.standoff_dist;
     planner_cfg.wp_reach_thresh  = cfg.planner.wp_reach_thresh;
     planner_cfg.replan_goal_dist = cfg.planner.replan_goal_dist;
-    planner_cfg.vfov_half_rad    = cfg.tracking_camera.vfov_deg * M_PI / 180.0;
-    planner_cfg.min_z            = cfg.target.track_z + 0.5;  // 0.5 m above aim point
-    planner_cfg.target_track_z   = cfg.target.track_z;
+    // Geometric VFOV half-angle for a 16:9 sensor, derived from HFOV.
+    // Matches TRACKING_HALF_VFOV = atan(tan(HFOV/2) * 9/16) used in the visualisers.
+    {
+        const double hfov_half = cfg.tracking_camera.fov_deg * M_PI / 180.0 / 2.0;
+        planner_cfg.vfov_half_rad = std::atan(std::tan(hfov_half) * 9.0 / 16.0);
+    }
+    planner_cfg.theta_des_rad  = cfg.planner.theta_des_deg  * M_PI / 180.0;
+    planner_cfg.theta_safe_rad = cfg.planner.theta_safe_deg * M_PI / 180.0;
+    planner_cfg.min_z          = cfg.target.track_z + 0.5;  // 0.5 m above aim point
+    planner_cfg.target_track_z = cfg.target.track_z;
     planner_cfg.rrt.step_size      = cfg.planner.step_size;
     planner_cfg.rrt.goal_bias      = cfg.planner.goal_bias;
     planner_cfg.rrt.safety_margin  = cfg.planner.safety_margin;

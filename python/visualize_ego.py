@@ -61,6 +61,8 @@ CAMERA_RANGE      = cfg.get("camera", {}).get("range", 8.0)
 TRACKING_FOV_DEG  = cfg.get("tracking_camera", {}).get("fov", 60.0)
 TRACKING_HALF_FOV  = np.radians(TRACKING_FOV_DEG / 2.0)
 TRACKING_HALF_VFOV = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # true vertical half-FOV, 16:9
+_PIP_VFOV_DEG = float(np.degrees(2.0 * TRACKING_HALF_VFOV))  # ≈36° VFOV_full for 60° HFOV / 16:9
+ATT_KP             = cfg.get("controller", {}).get("attitude_kp", 6.680)
 SIM_DT             = cfg["sim"]["dt"]
 TRAIL_LEN          = 120
 _target_cfg    = cfg.get("target", {})
@@ -82,7 +84,7 @@ CAM_SMOOTH_AZ = 1.0 #0.10   # heading follow speed   (0 = frozen … 1 = instant
 # Layout
 W, H       = 1040, 760
 MINI_W, MINI_H = 220, 220   # mini-map overlay (bottom-left)
-PIP_W, PIP_H   = 280, 200   # drone-cam PiP overlay (bottom-right)
+PIP_W, PIP_H   = 280, 158   # drone-cam PiP overlay — 16:9 to match tracking camera sensor
 _PIP_X0 = W - PIP_W - 10   # = 750
 _PIP_Y0 = H - PIP_H - 10   # = 550
 
@@ -128,17 +130,16 @@ def _frustum_pts(dx, dy, dz, yaw, pitch, half_h, half_v, length):
 
 def _pip_camera_angles(dx, dy, dz, tx, ty, tz=0.0):
     """
-    Exact (azimuth, elevation) for TurntableCamera centred at (tx,ty,tz)
-    with camera position at (dx,dy,dz).
+    (azimuth, elevation, distance) for vispy TurntableCamera centred at
+    (tx,ty,tz) with the camera eye at (dx,dy,dz).
 
-    Derivation:  cam_pos = center + dist*(sin(az), -cos(az)*cos(el), cos(az)*sin(el))
-    Sign of cos(az) matches sign of (ty-dy).
+    Vispy standard formula:
+        cam_pos = center + dist * (sin(az)*cos(el), -cos(az)*cos(el), sin(el))
+    Inverting: el = arcsin((dz-tz)/dist),  az = arctan2(dx-tx, ty-dy).
     """
     dist = max(np.sqrt((dx-tx)**2 + (dy-ty)**2 + (dz-tz)**2), 0.01)
-    s = 1.0 if (ty - dy) >= 0.0 else -1.0
-    den = s * np.sqrt((ty - dy)**2 + (dz - tz)**2)
-    az  = float(np.degrees(np.arctan2(dx - tx, den)))
-    el  = float(np.clip(np.degrees(np.arctan2(s * (dz - tz), s * (ty - dy))), -89, 89))
+    el   = float(np.clip(np.degrees(np.arcsin(np.clip((dz - tz) / dist, -1.0, 1.0))), -89, 89))
+    az   = float(np.degrees(np.arctan2(dx - tx, ty - dy)))
     return az, el, dist
 
 # ── Canvas + main 3-D view ────────────────────────────────────────────────────
@@ -296,7 +297,7 @@ _pip_vb.pos  = (_PIP_X0, _PIP_Y0)
 _pip_vb.size = (PIP_W, PIP_H)
 
 _pip_cam = scene.cameras.TurntableCamera(
-    fov=TRACKING_FOV_DEG, elevation=0.0, azimuth=0.0,
+    fov=_PIP_VFOV_DEG, elevation=0.0, azimuth=0.0,
     distance=DESIRED_DISTANCE, up="+z",
 )
 _pip_vb.camera = _pip_cam
@@ -354,9 +355,23 @@ visuals.Line(
 )
 
 # ══ HUD ══════════════════════════════════════════════════════════════════════
-_hud_metrics = visuals.Text(
+# Three separate Text visuals to avoid vispy multiline clipping:
+#   _hud_line1  : t + position + range  (y=12)
+#   _hud_yaw    : cam yaw act/des/err   (y=30)
+#   _hud_pitch  : cam pitch act/des/ideal (y=48)
+_hud_line1 = visuals.Text(
     "", color="white", font_size=11,
     pos=(12, 12), anchor_x="left", anchor_y="top",
+    parent=canvas.scene,
+)
+_hud_yaw = visuals.Text(
+    "", color="white", font_size=11,
+    pos=(12, 30), anchor_x="left", anchor_y="top",
+    parent=canvas.scene,
+)
+_hud_pitch = visuals.Text(
+    "", color=(0.60, 0.85, 1.0, 1.0), font_size=11,
+    pos=(12, 48), anchor_x="left", anchor_y="top",
     parent=canvas.scene,
 )
 _hud_status = visuals.Text(
@@ -417,8 +432,14 @@ def _on_timer(event):
     tx   = float(row["target_x"])
     ty   = float(row["target_y"])
     tz   = PERSON_TRACK_Z   # upper back / head tracking point
-    yaw  = float(row["drone_yaw"])
-    tsim = float(row["t"])
+    yaw           = float(row["drone_yaw"])
+    pitch         = float(row["drone_pitch"])      if "drone_pitch"      in df.columns else 0.0
+    pitch_rate    = float(row["pitch_rate"])       if "pitch_rate"       in df.columns else 0.0
+    yaw_des       = float(row["ref_yaw"])          if "ref_yaw"          in df.columns else float(np.arctan2(ty - dy, tx - dx))
+    pitch_ref_cam = float(row["ref_camera_pitch"]) if "ref_camera_pitch" in df.columns else 0.0
+    # commanded pitch = drone_pitch + attitude-error correction (mirrors visualize.py)
+    pitch_des     = pitch + pitch_rate / ATT_KP
+    tsim  = float(row["t"])
 
     # ── Chase camera — always behind drone on opposite side from target ──────
     _cam_center[:] += CAM_SMOOTH * (np.array([dx, dy, dz]) - _cam_center)
@@ -453,12 +474,18 @@ def _on_timer(event):
     # ── Drone 3-D model ───────────────────────────────────────────────────────
     _update_drone_3d(dx, dy, dz, yaw)
 
-    # ── Camera pitch toward tracking point ────────────────────────────────────
+    # ── Camera pitch toward tracking point (reference/ideal for HUD display) ─
     horiz_dist = max(float(np.hypot(tx - dx, ty - dy)), 0.01)
     pitch_cam  = float(np.arctan2(dz - tz, horiz_dist))   # positive = pitched down
 
-    # ── Camera frustum (pitched toward tracking point) ────────────────────────
-    _frustum.set_data(pos=_frustum_pts(dx, dy, dz, yaw, pitch_cam,
+    # Actual camera boresight: drone body IS the camera platform (no gimbal).
+    # bore = unit vector in the direction the camera is pointing (ENU).
+    bore = np.array([np.cos(yaw) * np.cos(pitch),
+                     np.sin(yaw) * np.cos(pitch),
+                     -np.sin(pitch)])
+
+    # ── Camera frustum (actual drone body pitch = camera pitch, no gimbal) ───
+    _frustum.set_data(pos=_frustum_pts(dx, dy, dz, yaw, pitch,
                                         TRACKING_HALF_FOV, TRACKING_HALF_VFOV,
                                         CAMERA_RANGE))
 
@@ -475,9 +502,19 @@ def _on_timer(event):
         _drone_trail_3d.set_data(pos=np.array(_drone_trail_world, dtype=np.float32))
         _drone_trail_3d.visible = True
 
-    # ── PiP camera (exact drone-eye position) ─────────────────────────────────
-    az_pip, el_pip, dist_pip = _pip_camera_angles(dx, dy, dz, tx, ty, tz)
-    _pip_cam.center    = (float(tx), float(ty), float(tz))
+    # ── PiP camera: body-fixed view via bore-endpoint centering ─────────────
+    # _pip_camera_angles(eye→center) reliably renders (direct bore formula gives
+    # a black viewport in vispy).  Center the TurntableCamera on the point where
+    # the drone boresight intersects the target's horizontal distance, so body
+    # pitch shifts the target up/down in frame exactly as a body-fixed camera.
+    #
+    #   tz_bore = dz - horiz * tan(pitch)
+    #   pitch=0  → tz_bore = dz (horizontal view, target below centre)
+    #   pitch=α  → tz_bore ≈ tz  (target near centre)
+    horiz_dist_pip = max(float(np.hypot(tx - dx, ty - dy)), 0.01)
+    tz_bore = float(dz - horiz_dist_pip * np.tan(pitch))
+    az_pip, el_pip, dist_pip = _pip_camera_angles(dx, dy, dz, tx, ty, tz_bore)
+    _pip_cam.center    = (float(tx), float(ty), float(tz_bore))
     _pip_cam.distance  = float(dist_pip)
     _pip_cam.azimuth   = float(az_pip)
     _pip_cam.elevation = float(el_pip)
@@ -508,20 +545,37 @@ def _on_timer(event):
     ref_yaw = np.arctan2(ty - dy, tx - dx)
     yaw_err = np.arctan2(np.sin(yaw - ref_yaw), np.cos(yaw - ref_yaw))
 
-    # 3-D cone FOV check: angle between horizontal bore and 3-D direction to tracking point.
-    # Accounts for both horizontal yaw error and the elevation the drone must pitch down.
-    t_vec    = np.array([tx - dx, ty - dy, tz - dz], dtype=float)
-    t_dist   = max(float(np.linalg.norm(t_vec)), 0.01)
-    bore     = np.array([np.cos(yaw), np.sin(yaw), 0.0])
-    angle_3d = float(np.arccos(np.clip(np.dot(bore, t_vec / t_dist), -1.0, 1.0)))
-    in_fov   = angle_3d <= TRACKING_HALF_FOV
-    dist     = t_dist   # 3-D range to tracking point
+    # Geometric FOV check — does the target actually fall inside the camera frustum?
+    #   horizontal: yaw error to target vs H-FOV half-angle
+    #   vertical:   angle from camera boresight to target vs V-FOV half-angle
+    #
+    # alpha  = angle to target below horizontal (ENU: positive = target below drone)
+    # pitch  = body pitch (ENU: positive = nose tilted down = boresight below horizontal)
+    # alpha - pitch = target's angular offset from boresight centre (positive = target below boresight)
+    horiz_dist_2d = float(np.hypot(tx - dx, ty - dy))
+    alpha         = float(np.arctan2(dz - tz, horiz_dist_2d))   # geometric elevation to target
+    pitch_to_target = alpha - pitch                              # offset from camera boresight
+    dist   = float(np.hypot(horiz_dist_2d, tz - dz))
+    in_fov = (abs(yaw_err) <= TRACKING_HALF_FOV) and \
+             (abs(pitch_to_target) <= TRACKING_HALF_VFOV)
 
-    _hud_metrics.text = (
-        f"t = {tsim:.1f} s\n"
-        f"drone ({dx:.1f}, {dy:.1f}, {dz:.1f}) m\n"
-        f"range = {dist:.2f} m   Δ = {dist - DESIRED_DISTANCE:+.2f} m\n"
-        f"yaw err = {np.degrees(yaw_err):.1f}°   cam↓ = {np.degrees(pitch_cam):.1f}°"
+    # Controller tracking error (for HUD display only — not used for FOV check)
+    pitch_cam_error = float(np.arctan2(
+        np.sin(pitch_des - pitch_ref_cam),
+        np.cos(pitch_des - pitch_ref_cam)))
+
+    _hud_line1.text = (
+        f"t = {tsim:.1f} s   drone ({dx:.1f}, {dy:.1f}, {dz:.1f}) m"
+        f"   range = {dist:.2f} m   Δ = {dist - DESIRED_DISTANCE:+.2f} m"
+    )
+    _hud_yaw.text = (
+        f"yaw    act {np.degrees(yaw):.1f}°   des {np.degrees(yaw_des):.1f}°"
+        f"   err {np.degrees(yaw_err):.1f}°  [lim ±{np.degrees(TRACKING_HALF_FOV):.0f}°]"
+    )
+    _hud_pitch.text = (
+        f"pitch  act {np.degrees(pitch):.1f}°   cmd {np.degrees(pitch_des):.1f}°"
+        f"   ref {np.degrees(pitch_ref_cam):.1f}°   err {np.degrees(pitch_cam_error):.1f}°"
+        f"  [lim ±{np.degrees(TRACKING_HALF_VFOV):.0f}°]"
     )
     _hud_status.text  = "TARGET IN FOV" if in_fov else "TARGET LOST"
     _hud_status.color = "#00ff88" if in_fov else "#ff4444"

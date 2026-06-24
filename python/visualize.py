@@ -68,7 +68,7 @@ FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
 TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
-TRACKING_HALF_VFOV  = np.radians(cfg.get("tracking_camera", {}).get("vfov", 18.0))
+TRACKING_HALF_VFOV  = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # true V-FOV half for 16:9
 PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
@@ -111,8 +111,8 @@ has_ref_z       = "ref_z" in df.columns
 
 if has_cam_pitch:
     df["pitch_cam_error"] = np.arctan2(
-        np.sin(df["drone_pitch"] - df["ref_camera_pitch"]),
-        np.cos(df["drone_pitch"] - df["ref_camera_pitch"]))
+        np.sin(df["pitch_des"] - df["ref_camera_pitch"]),
+        np.cos(df["pitch_des"] - df["ref_camera_pitch"]))
 
 # ── Occlusion metric (eq. 4.28–4.29) ─────────────────────────────────────────
 
@@ -407,7 +407,7 @@ ax_pitch.set_xlim(0, tmax)
 ax_pitch.grid(True)
 
 if has_cam_pitch:
-    _pitch_cols = [df["ref_camera_pitch"], df["drone_pitch"], df["pitch_cam_error"]]
+    _pitch_cols = [df["ref_camera_pitch"], df["drone_pitch"], df["pitch_des"], df["pitch_cam_error"]]
     ax_pitch.set_ylim(*_ylim(*_pitch_cols, pad=0.2))
 
     ax_pitch.fill_between([0, tmax], -TRACKING_HALF_VFOV, TRACKING_HALF_VFOV,
@@ -421,13 +421,16 @@ if has_cam_pitch:
                   linestyle="--", label="cam pitch ref", zorder=3)
 
     cam_pitch_state_line, = ax_pitch.plot([], [], color="steelblue", linewidth=1.5,
-                                           label="drone pitch", zorder=4)
+                                           label="pitch_des", zorder=4)
+    drone_pitch_line,     = ax_pitch.plot([], [], color="mediumpurple", linewidth=1.2,
+                                           linestyle="-", label="drone_pitch", zorder=4)
     cam_pitch_err_line,   = ax_pitch.plot([], [], color="crimson",   linewidth=1.5,
                                            label="pitch error", zorder=5)
     ax_pitch.legend(fontsize=8)
 else:
     _placeholder(ax_pitch, "Camera pitch not in log\n(rebuild C++ and re-run)")
     cam_pitch_state_line, = ax_pitch.plot([], [])
+    drone_pitch_line,     = ax_pitch.plot([], [])
     cam_pitch_err_line,   = ax_pitch.plot([], [])
 
 # ── Panel (4,1): Occlusion ────────────────────────────────────────────────────
@@ -465,7 +468,7 @@ _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                alt_drone_line,
                xy_dist_line,
                yaw_state_line, yaw_line,
-               cam_pitch_state_line, cam_pitch_err_line,
+               cam_pitch_state_line, drone_pitch_line, cam_pitch_err_line,
                wx_line, wy_line, wz_line,
                drone_vx_line, drone_vy_line,
                roll_line, pitch_line,
@@ -542,7 +545,8 @@ def update(frame):
 
     # (4,0) Camera pitch
     if has_cam_pitch:
-        cam_pitch_state_line.set_data(t, sub["drone_pitch"])
+        cam_pitch_state_line.set_data(t, sub["pitch_des"])
+        drone_pitch_line.set_data(t, sub["drone_pitch"])
         cam_pitch_err_line.set_data(t, sub["pitch_cam_error"])
 
     # (4,1) Occlusion

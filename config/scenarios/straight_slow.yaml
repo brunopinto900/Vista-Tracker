@@ -1,0 +1,37 @@
+base: ../base.yaml
+
+# Scenario: Straight Slow
+# Person walks a straight line along +x at 0.5 m/s.
+# Drone starts 4 m directly behind (west) at 3 m altitude — minimal initial yaw/pitch error.
+# Use this to isolate steady-state tracking behaviour with no lateral motion or obstacles.
+
+sim:
+  T: 70.0
+
+drone_init:
+  x: 1.0
+  y: 0.0
+  z: 3.0
+
+controller:
+  desired_distance: 4.0
+
+target_trajectory:
+  type: person
+  max_accel: 0.5
+  max_speed: 0.5
+  max_lateral_accel: 1.0
+  loop: false
+  waypoints:
+    - pos: [5.0,  0.0, 0.0]
+      speed: 0.5
+    - pos: [35.0, 0.0, 0.0]
+      speed: 0.5
+
+world:
+  grid:
+    x_min: -5.0
+    x_max:  45.0
+    y_min: -10.0
+    y_max:  10.0
+  obstacles: []

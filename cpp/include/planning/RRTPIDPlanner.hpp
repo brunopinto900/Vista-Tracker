@@ -27,9 +27,11 @@ public:
         double standoff_dist    = 4.0;  // metres from target
         double wp_reach_thresh  = 0.5;  // advance waypoint within this radius (m)
         double replan_goal_dist = 1.5;  // replan when goal shifts more than this (m)
-        double vfov_half_rad    = 0.5236; // camera V-FOV half-angle (rad) — 30° default
-        double min_z            = 2.0;   // minimum safe altitude (m)
-        double target_track_z   = 1.40;  // m — camera aim point height on the person
+        double vfov_half_rad    = 0.3142;  // geometric V-FOV half-angle (rad) — 18° for 60° HFOV / 16:9
+        double theta_des_rad    = 0.2269;  // desired viewing angle below horizon (rad) — 13°
+        double theta_safe_rad   = 0.0524;  // FOV safety margin (rad) — 3°
+        double min_z            = 2.0;     // altitude floor (m)
+        double target_track_z   = 1.40;    // camera aim point height on target (m)
         RRTConfig rrt{};
     };
 
