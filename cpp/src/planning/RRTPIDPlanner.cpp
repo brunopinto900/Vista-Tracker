@@ -4,21 +4,37 @@
 #include <algorithm>
 #include <cmath>
 
+// Minimum horizontal standoff so the full person bounding box [0, h_top] fits
+// within the usable VFOV half-angle phi at the given altitude.
+static double computeStandoffMin(double alt, double h_aim, double h_top, double phi_rad)
+{
+    const double tanp = std::tan(phi_rad);
+    auto largeRoot = [&](double A, double B, double C) {
+        const double disc = B * B - 4.0 * A * C;
+        return (-B + std::sqrt(std::max(disc, 0.0))) / (2.0 * A);
+    };
+    const double r_head = largeRoot(tanp, -(h_top - h_aim),
+                                    tanp * (alt - h_aim) * (alt - h_top));
+    const double r_feet = largeRoot(tanp, -h_aim,
+                                    tanp * alt * (alt - h_aim));
+    return std::max(r_head, r_feet);
+}
+
 RRTPIDPlanner::RRTPIDPlanner(const Config& cfg, unsigned rrt_seed)
     : cfg_(cfg)
     , rrt_(cfg.rrt, rrt_seed)
 {}
 
 std::array<double, 2> RRTPIDPlanner::computeGoal(
-    const State& drone, const TargetEstimate& target) const
+    const State& drone, const TargetEstimate& target, double standoff) const
 {
     const auto& t = target.horizon[0];
     double dx = drone.x - t.x;
     double dy = drone.y - t.y;
     double d  = std::sqrt(dx * dx + dy * dy);
     if (d < 1e-6)
-        return {t.x + cfg_.standoff_dist, t.y};
-    double s = cfg_.standoff_dist / d;
+        return {t.x + standoff, t.y};
+    double s = standoff / d;
     return {t.x + dx * s, t.y + dy * s};
 }
 
@@ -61,13 +77,21 @@ Reference RRTPIDPlanner::update(
 {
     const auto& t = target.horizon[0];
 
-    auto ideal_goal = computeGoal(drone, target);
+    // Standoff geometry: recompute each step from actual drone altitude.
+    // Higher altitude → steeper view angle → person fits in frame at shorter range.
+    // Clamp to min_z so the formula never receives an altitude below the floor.
+    const double phi_rad      = cfg_.vfov_half_rad - cfg_.theta_safe_rad;
+    const double standoff_dist = computeStandoffMin(
+        std::max(drone.z, cfg_.min_z),
+        cfg_.target_track_z, cfg_.target_height, phi_rad);
+
+    auto ideal_goal = computeGoal(drone, target, standoff_dist);
 
     // When the ideal standoff is inside an obstacle, find the nearest feasible
     // standoff by scanning alternate bearing angles.  This prevents planning
     // toward an infeasible goal and avoids permanent hold-in-place.
     auto goal = findFeasibleGoal(
-        ideal_goal, t, cfg_.standoff_dist, cfg_.rrt.safety_margin, esdf);
+        ideal_goal, t, standoff_dist, cfg_.rrt.safety_margin, esdf);
 
     const bool ideal_feasible = (esdf.query(ideal_goal[0], ideal_goal[1], 0.0) >=
                                   static_cast<float>(cfg_.rrt.safety_margin));
@@ -170,9 +194,18 @@ Reference RRTPIDPlanner::update(
     const double h_des        = horiz_dist * std::tan(theta_ref);
 
     Reference ref;
-    ref.z            = std::max(cfg_.target_track_z + h_des, cfg_.min_z);
-    ref.yaw          = std::atan2(t.y - drone.y, t.x - drone.x);
-    ref.camera_pitch = theta_ref;
+    ref.z   = std::max(cfg_.target_track_z + h_des, cfg_.min_z);
+    ref.yaw = std::atan2(t.y - drone.y, t.x - drone.x);
+
+    // When the altitude floor clips h_des, the geometric viewing angle is larger
+    // than theta_ref.  Command the actual angle so the body pitches to keep the
+    // boresight on track_z rather than under-aiming.
+    if (ref.z > cfg_.target_track_z + h_des && horiz_dist > 1e-6)
+        ref.camera_pitch = std::clamp(
+            std::atan2(ref.z - cfg_.target_track_z, horiz_dist),
+            0.0, std::max(0.0, theta_margin));
+    else
+        ref.camera_pitch = theta_ref;
     ref.deadlock_active = !ideal_feasible;
     ref.deadlock_angle  = !ideal_feasible
         ? std::atan2(goal[1] - t.y, goal[0] - t.x)

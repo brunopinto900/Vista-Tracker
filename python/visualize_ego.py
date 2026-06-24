@@ -56,7 +56,6 @@ df = pd.read_csv(LOG_FILE)
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 obstacles         = cfg.get("world", {}).get("obstacles", [])
-DESIRED_DISTANCE  = cfg["controller"]["desired_distance"]
 CAMERA_RANGE      = cfg.get("camera", {}).get("range", 8.0)
 TRACKING_FOV_DEG  = cfg.get("tracking_camera", {}).get("fov", 60.0)
 TRACKING_HALF_FOV  = np.radians(TRACKING_FOV_DEG / 2.0)
@@ -67,7 +66,25 @@ SIM_DT             = cfg["sim"]["dt"]
 TRAIL_LEN          = 120
 _target_cfg    = cfg.get("target", {})
 PERSON_HEIGHT  = _target_cfg.get("height",  1.80)  # m — person total height
-PERSON_TRACK_Z = _target_cfg.get("track_z", 1.40)  # m — camera aim point (upper back / head)
+PERSON_WIDTH   = _target_cfg.get("width",   0.50)  # m — shoulder width
+PERSON_TRACK_Z = _target_cfg.get("track_z", 0.90)  # m — camera aim point (vertical centre)
+
+# Minimum standoff so the full bounding box [0, PERSON_HEIGHT] fits within the
+# usable VFOV half-angle at the altitude floor — mirrors computeStandoffMin() in main.cpp.
+def _compute_standoff_min(min_z, h_aim, h_top, phi_rad):
+    tanp = np.tan(phi_rad)
+    def _large_root(A, B, C):
+        disc = B*B - 4*A*C
+        return (-B + np.sqrt(max(disc, 0.0))) / (2*A)
+    r_head = _large_root(tanp, -(h_top - h_aim), tanp * (min_z - h_aim) * (min_z - h_top))
+    r_feet = _large_root(tanp, -h_aim,            tanp * min_z * (min_z - h_aim))
+    return max(r_head, r_feet)
+
+_planner_cfg     = cfg.get("planner", {})
+_min_z           = _planner_cfg.get("min_z", 2.0)
+_theta_safe_rad  = np.radians(_planner_cfg.get("theta_safe", 3.0))
+_phi_rad         = TRACKING_HALF_VFOV - _theta_safe_rad
+DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
 
 grid = cfg.get("world", {}).get("grid", {})
 GRID_X_MIN = grid.get("x_min", -12.5)
@@ -76,8 +93,8 @@ GRID_Y_MIN = grid.get("y_min", -12.5)
 GRID_Y_MAX = grid.get("y_max",  12.5)
 
 # ── Camera tuning (edit these) ────────────────────────────────────────────────
-CHASE_DIST    = 20.0   # metres behind drone
-CHASE_EL      = 30.0   # elevation angle above drone (degrees)
+CHASE_DIST    = 10.0   # metres behind drone
+CHASE_EL      = 20.0   # elevation angle above drone (degrees)
 CAM_SMOOTH    = 1.0 #0.15   # position follow speed  (0 = frozen … 1 = instant)
 CAM_SMOOTH_AZ = 1.0 #0.10   # heading follow speed   (0 = frozen … 1 = instant)
 
@@ -89,8 +106,8 @@ _PIP_X0 = W - PIP_W - 10   # = 750
 _PIP_Y0 = H - PIP_H - 10   # = 550
 
 # Drone icon sizes
-_ARM   = 0.50   # arm length from body centre to rotor hub (m)
-_R_ROT = 0.22   # rotor display radius (m)
+_ARM   = 0.3   # arm length from body centre to rotor hub (m)
+_R_ROT = 0.11   # rotor display radius (m)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +144,61 @@ def _frustum_pts(dx, dy, dz, yaw, pitch, half_h, half_v, length):
         ap, tl, n, ap, tr, n, ap, bl, n, ap, br, n,
         tl, tr, n, tr, br, n, br, bl, n, bl, tl, n,
     ], dtype=np.float32)
+
+def _project_to_pip(pt3d):
+    """
+    Project a 3-D world point to PiP canvas pixel coordinates.
+
+    Reads the current _pip_cam state (must be called after _pip_cam is updated).
+    Returns (px, py) in canvas pixels, or None if the point is behind the camera.
+    The PiP viewport occupies x ∈ [_PIP_X0, _PIP_X0+PIP_W],
+                               y ∈ [_PIP_Y0, _PIP_Y0+PIP_H] (y=0 at top).
+    """
+    az   = np.radians(float(_pip_cam.azimuth))
+    el   = np.radians(float(_pip_cam.elevation))
+    cc   = _pip_cam.center
+    cx, cy, cz = float(cc[0]), float(cc[1]), float(cc[2])
+    dist = max(float(_pip_cam.distance), 0.01)
+
+    # Eye position: vispy TurntableCamera formula
+    eye = np.array([
+        cx + dist * np.sin(az) * np.cos(el),
+        cy - dist * np.cos(az) * np.cos(el),
+        cz + dist * np.sin(el),
+    ])
+
+    # Camera axes
+    fwd = np.array([cx, cy, cz]) - eye
+    fwd_n = np.linalg.norm(fwd)
+    if fwd_n < 1e-6:
+        return None
+    fwd /= fwd_n
+
+    right = np.cross(fwd, np.array([0.0, 0.0, 1.0]))
+    rn = np.linalg.norm(right)
+    right = right / rn if rn > 1e-6 else np.array([1.0, 0.0, 0.0])
+    up = np.cross(right, fwd)  # normalised by construction
+
+    # Point in camera space
+    d     = np.array(pt3d, dtype=float) - eye
+    cam_x = np.dot(d, right)
+    cam_y = np.dot(d, up)
+    cam_z = np.dot(d, fwd)   # positive = in front of camera
+
+    if cam_z < 0.01:
+        return None
+
+    # Perspective divide — _pip_cam.fov is the full vertical FOV
+    half_vfov = np.radians(float(_pip_cam.fov) / 2.0)
+    aspect    = PIP_W / PIP_H
+    ndc_y =  cam_y / (cam_z * np.tan(half_vfov))
+    ndc_x =  cam_x / (cam_z * np.tan(half_vfov) * aspect)
+
+    # NDC → PiP canvas pixels  (ndc_y=+1 → top of PiP, y=0 is top in canvas)
+    px = _PIP_X0 + (ndc_x + 1.0) * 0.5 * PIP_W
+    py = _PIP_Y0 + (1.0 - (ndc_y + 1.0) * 0.5) * PIP_H
+    return float(px), float(py)
+
 
 def _pip_camera_angles(dx, dy, dz, tx, ty, tz=0.0):
     """
@@ -199,7 +271,7 @@ for obs in obstacles:
 # Body: cylinder from z=0 to z=BODY_LEN.  Head: sphere above the body.
 _HEAD_R     = 0.22                            # head sphere radius (m) — fixed proportion
 _BODY_LEN   = PERSON_HEIGHT - 2.0 * _HEAD_R  # leaves room for a full head diameter
-_BODY_CEN_Z = _BODY_LEN / 2.0               # cylinder centre (bottom at 0)
+_BODY_CEN_Z = 0.0                            # create_cylinder offset=False: z runs 0→length, bottom already at 0
 _HEAD_CEN_Z = _BODY_LEN + _HEAD_R           # head centre (just above body top)
 _cyl_md  = create_cylinder(rows=10, cols=14, radius=[0.28, 0.28], length=_BODY_LEN)
 _head_md = create_sphere(rows=8, cols=12, radius=_HEAD_R)
@@ -325,16 +397,15 @@ for obs in obstacles:
     box.transform = transforms.STTransform(translate=(obs["x"], obs["y"], float(sz)))
     _pip_obs_boxes.append(box)
 
-# PiP person (shared MeshData)
-_pip_person_cyl = visuals.Mesh(meshdata=_cyl_md, color=(0.82, 0.28, 0.08, 0.95),
-                                shading="flat", parent=_pip_vb.scene)
-_pip_cyl_tr = transforms.STTransform()
-_pip_person_cyl.transform = _pip_cyl_tr
-
-_pip_person_head = visuals.Mesh(meshdata=_head_md, color=(1.0, 0.78, 0.58, 1.0),
-                                 shading="smooth", parent=_pip_vb.scene)
-_pip_head_tr = transforms.STTransform()
-_pip_person_head.transform = _pip_head_tr
+# PiP person — 2D projected stick figure drawn on canvas.scene (not _pip_vb.scene).
+# 3D Meshes in a ViewBox overlay fail the depth test against the main scene's depth
+# buffer (vispy doesn't clear the depth region for overlay ViewBoxes), so they never
+# render.  Projecting through _project_to_pip() sidesteps this entirely.
+_pip_person_2d = visuals.Line(
+    parent=canvas.scene, color=(0.82, 0.28, 0.08, 0.95), width=2.0, method="gl",
+    connect="segments",
+)
+_pip_person_2d.visible = False
 
 # PiP label + crosshair
 _ch     = 7
@@ -353,6 +424,13 @@ visuals.Line(
     pos=np.array([[_PIP_CX, _PIP_CY - _ch], [_PIP_CX, _PIP_CY + _ch]], dtype=np.float32),
     color=(1., 1., 1., 0.45), width=1, method="gl", parent=canvas.scene,
 )
+
+# 2-D bounding box overlay drawn in canvas (screen) space on the PiP image
+_pip_bbox_2d = visuals.Line(
+    parent=canvas.scene,
+    color=(0.15, 1.0, 0.15, 0.90), width=1.5, method="gl",
+)
+_pip_bbox_2d.visible = False
 
 # ══ HUD ══════════════════════════════════════════════════════════════════════
 # Three separate Text visuals to avoid vispy multiline clipping:
@@ -441,10 +519,11 @@ def _on_timer(event):
     pitch_des     = pitch + pitch_rate / ATT_KP
     tsim  = float(row["t"])
 
-    # ── Chase camera — always behind drone on opposite side from target ──────
+    # ── Chase camera — always directly behind drone along its yaw heading ────
     _cam_center[:] += CAM_SMOOTH * (np.array([dx, dy, dz]) - _cam_center)
-    # az places camera at (dx-tx, ty-dy) direction from drone center
-    az_target = float(np.degrees(np.arctan2(dx - tx, ty - dy)))
+    # vispy eye = center + dist*(sin(az)*cos(el), -cos(az)*cos(el), sin(el))
+    # For eye to lie in the -yaw direction: az = atan2(-cos(yaw), sin(yaw))
+    az_target = float(np.degrees(np.arctan2(-np.cos(yaw), np.sin(yaw))))
     d_az = (az_target - _cam_az[0] + 180.0) % 360.0 - 180.0
     _cam_az[0] += CAM_SMOOTH_AZ * d_az
     cam.center    = (_cam_center[0], _cam_center[1], _cam_center[2])
@@ -466,10 +545,8 @@ def _on_timer(event):
             mini_ln.set_data(color=c)
 
     # ── Person (1.80 m — body cylinder + head sphere) ────────────────────────
-    _cyl_tr.translate      = (tx, ty, _BODY_CEN_Z)
-    _head_tr.translate     = (tx, ty, _HEAD_CEN_Z)
-    _pip_cyl_tr.translate  = (tx, ty, _BODY_CEN_Z)
-    _pip_head_tr.translate = (tx, ty, _HEAD_CEN_Z)
+    _cyl_tr.translate  = (tx, ty, _BODY_CEN_Z)
+    _head_tr.translate = (tx, ty, _HEAD_CEN_Z)
 
     # ── Drone 3-D model ───────────────────────────────────────────────────────
     _update_drone_3d(dx, dy, dz, yaw)
@@ -518,6 +595,51 @@ def _on_timer(event):
     _pip_cam.distance  = float(dist_pip)
     _pip_cam.azimuth   = float(az_pip)
     _pip_cam.elevation = float(el_pip)
+
+    # ── Bounding box + person stick figure — 2-D overlays on PiP image ─────────
+    # Project key 3-D points through the PiP camera into canvas pixel coordinates.
+    _vdx, _vdy = tx - dx, ty - dy
+    _vd_n = max(np.hypot(_vdx, _vdy), 0.01)
+    _rvx, _rvy = -_vdy / _vd_n, _vdx / _vd_n
+    _bw = PERSON_WIDTH / 2.0
+    _corners_3d = [
+        [tx - _bw * _rvx, ty - _bw * _rvy, 0.0],
+        [tx + _bw * _rvx, ty + _bw * _rvy, 0.0],
+        [tx + _bw * _rvx, ty + _bw * _rvy, PERSON_HEIGHT],
+        [tx - _bw * _rvx, ty - _bw * _rvy, PERSON_HEIGHT],
+    ]
+    _sc = [_project_to_pip(c) for c in _corners_3d]
+    # Stick figure: spine (feet→head) + shoulders + hip bar
+    _p_feet   = _project_to_pip([tx, ty, 0.0])
+    _p_head   = _project_to_pip([tx, ty, PERSON_HEIGHT])
+    _p_ls     = _project_to_pip([tx - _bw * _rvx, ty - _bw * _rvy, _BODY_LEN])
+    _p_rs     = _project_to_pip([tx + _bw * _rvx, ty + _bw * _rvy, _BODY_LEN])
+    _p_lh     = _project_to_pip([tx - _bw * _rvx, ty - _bw * _rvy, 0.0])
+    _p_rh     = _project_to_pip([tx + _bw * _rvx, ty + _bw * _rvy, 0.0])
+    _fig_pts  = [_p_feet, _p_head, _p_ls, _p_rs, _p_lh, _p_rh]
+    if all(s is not None for s in _sc):
+        _xs = [s[0] for s in _sc]
+        _ys = [s[1] for s in _sc]
+        x0_bb, x1_bb = min(_xs), max(_xs)
+        y0_bb, y1_bb = min(_ys), max(_ys)
+        _pip_bbox_2d.set_data(pos=np.array([
+            [x0_bb, y0_bb], [x1_bb, y0_bb],
+            [x1_bb, y1_bb], [x0_bb, y1_bb],
+            [x0_bb, y0_bb],
+        ], dtype=np.float32))
+        _pip_bbox_2d.visible = True
+    else:
+        _pip_bbox_2d.visible = False
+    if all(s is not None for s in _fig_pts):
+        _pip_person_2d.set_data(pos=np.array([
+            [_p_feet[0], _p_feet[1]], [_p_head[0], _p_head[1]],  # spine
+            [_p_ls[0],   _p_ls[1]],   [_p_rs[0],   _p_rs[1]],   # shoulders
+            [_p_lh[0],   _p_lh[1]],   [_p_rh[0],   _p_rh[1]],   # hips
+        ], dtype=np.float32))
+        _pip_person_2d.visible = True
+    else:
+        _pip_person_2d.visible = False
+
 
     # ── Mini-map ──────────────────────────────────────────────────────────────
     _update_minimap_drone(dx, dy, yaw)

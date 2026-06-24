@@ -47,12 +47,13 @@ struct TargetConfig
 struct PlannerConfig
 {
     // Waypoint sequencer
-    double standoff_dist    = 4.0;   // desired distance from target (m)
+    double standoff_dist    = 4.0;   // computed at runtime from FOV bounding-box geometry
     double wp_reach_thresh  = 0.5;   // advance waypoint when within this radius (m)
     double replan_goal_dist = 1.5;   // replan when goal shifts more than this (m)
     // Visibility-aware altitude
     double theta_des_deg    = 20.0;  // desired viewing angle of target below horizon (deg)
     double theta_safe_deg   =  5.0;  // FOV safety margin (deg)
+    double min_z            = 2.0;   // altitude floor (m) — safety clearance above person
     // RRT
     double step_size        = 0.8;   // extension step (m)
     double goal_bias        = 0.10;  // fraction of samples directed at goal

@@ -22,7 +22,7 @@ tracking_camera:
 target:
   height:    1.80        # m — person total height
   width:     0.50        # m — shoulder width (physical extent used for occlusion)
-  track_z:   1.40        # m — camera aim point (upper back / head level)
+  track_z:   0.90        # m — camera aim point (vertical centre of person = height/2)
 
 estimator:
   horizon:      10
@@ -33,16 +33,17 @@ controller:
   ki_pos:           0.0    # outer position loop I gain (eliminates pos steady-state error)
   kp_vel:           5.0    # inner velocity loop P gain (vel error → acceleration)
   ki_vel:           0.2    # inner velocity loop I gain (eliminates steady-state vel error)
-  desired_distance: 4.0    #
+  desired_distance: 3.3    # approx; C++ computes exact from FOV bounding-box geometry
   attitude_kp:      6.680  # roll/pitch inner loop (rad/s per rad); wn=25 rad/s plant
   yaw_kp:           0.287  # yaw inner loop (rad/s per rad); wn=4 rad/s plant (reaction torque limited)
 
 planner:
-  standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
+  # standoff_dist is computed at runtime from bounding-box FOV geometry; not a YAML key.
   wp_reach_thresh:  0.5    # advance to next waypoint when drone is within this radius (m)
   replan_goal_dist: 4.0    # trigger replan when standoff goal shifts more than this (m)
   theta_des:       13.0    # desired viewing angle of target below horizon (degrees)
   theta_safe:       3.0    # FOV safety margin — reduces usable angle by this much (degrees)
+  min_z:            2.0    # altitude floor (m) — clearance above person height (1.80 m)
   rrt:
     step_size:      0.8    # RRT extension step (m)
     goal_bias:      0.10   # fraction of samples directed at goal

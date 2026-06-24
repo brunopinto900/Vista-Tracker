@@ -62,14 +62,30 @@ cfg = load_config(sys.argv[1] if len(sys.argv) > 1 else _default_cfg)
 
 obstacles        = cfg.get("world", {}).get("obstacles", [])
 grid             = cfg.get("world", {}).get("grid", {})
-DESIRED_DISTANCE    = cfg["controller"]["desired_distance"]
 ATT_KP              = cfg["controller"]["attitude_kp"]
 FOV_DEG             = cfg.get("camera", {}).get("fov", 360.0)
 CAMERA_RANGE        = cfg.get("camera", {}).get("range", 6.0)
 TRACKING_FOV_DEG    = cfg.get("tracking_camera", {}).get("fov", 60.0)
 TRACKING_HALF_FOV   = np.radians(TRACKING_FOV_DEG / 2.0)
 TRACKING_HALF_VFOV  = np.arctan(np.tan(TRACKING_HALF_FOV) * 9.0 / 16.0)  # true V-FOV half for 16:9
-PERSON_TRACK_Z      = cfg.get("target", {}).get("track_z", 1.40)
+_target_cfg    = cfg.get("target", {})
+PERSON_HEIGHT  = _target_cfg.get("height",  1.80)
+PERSON_TRACK_Z = _target_cfg.get("track_z", 0.90)
+
+def _compute_standoff_min(min_z, h_aim, h_top, phi_rad):
+    tanp = np.tan(phi_rad)
+    def _large_root(A, B, C):
+        disc = B*B - 4*A*C
+        return (-B + np.sqrt(max(disc, 0.0))) / (2*A)
+    r_head = _large_root(tanp, -(h_top - h_aim), tanp * (min_z - h_aim) * (min_z - h_top))
+    r_feet = _large_root(tanp, -h_aim,            tanp * min_z * (min_z - h_aim))
+    return max(r_head, r_feet)
+
+_planner_cfg     = cfg.get("planner", {})
+_min_z           = _planner_cfg.get("min_z", 2.0)
+_theta_safe_rad  = np.radians(_planner_cfg.get("theta_safe", 3.0))
+_phi_rad         = TRACKING_HALF_VFOV - _theta_safe_rad
+DESIRED_DISTANCE = _compute_standoff_min(_min_z, PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
 
 GRID_X_MIN = grid.get("x_min", -12.5)
 GRID_X_MAX = grid.get("x_max",  12.5)
@@ -82,11 +98,13 @@ _vfov_deg = np.degrees(TRACKING_HALF_VFOV)
 
 # ── Derived signals ───────────────────────────────────────────────────────────
 
-_drone_z_arr = df["drone_z"].to_numpy() if "drone_z" in df.columns else np.full(len(df), 2.0)
+_drone_z_arr  = df["drone_z"].to_numpy() if "drone_z" in df.columns else np.full(len(df), 2.0)
+_standoff_arr = np.array([_compute_standoff_min(max(z, _min_z), PERSON_TRACK_Z, PERSON_HEIGHT, _phi_rad)
+                           for z in _drone_z_arr])
 df["distance"]       = np.sqrt((df["target_x"] - df["drone_x"])**2 +
                                 (df["target_y"] - df["drone_y"])**2 +
                                 (PERSON_TRACK_Z - _drone_z_arr)**2)
-df["distance_error"] = df["distance"] - DESIRED_DISTANCE
+df["distance_error"] = df["distance"] - _standoff_arr
 
 df["x_error"]    = df["drone_x"] - df["target_x"]
 df["y_error"]    = df["drone_y"] - df["target_y"]
@@ -275,7 +293,7 @@ if has_ref_pos:
 drone_path,     = ax_traj.plot([], [], "b-",  linewidth=1.5, label="Drone", zorder=4)
 drone_marker,   = ax_traj.plot([], [], "bo",  markersize=8,  zorder=5)
 target_marker,  = ax_traj.plot([], [], "g^",  markersize=8,  label="Target", zorder=5)
-desired_circle, = ax_traj.plot([], [], "b--", linewidth=1,   label=f"d={DESIRED_DISTANCE}m", zorder=4)
+desired_circle, = ax_traj.plot([], [], "b--", linewidth=1,   label="standoff(z)", zorder=4)
 
 if has_ref_pos:
     ref_marker, = ax_traj.plot([], [], "D", color="darkorange", markersize=7,
@@ -304,10 +322,12 @@ deadlock_text = ax_traj.text(
 
 ax_err.set_title("XY Tracking Distance  (drone − target)")
 ax_err.set_xlabel("Time [s]"); ax_err.set_ylabel("Distance [m]")
-ax_err.axhline(DESIRED_DISTANCE, color="orange", linewidth=1.2, linestyle="--",
-               label=f"desired {DESIRED_DISTANCE:.1f} m")
+ax_err.axhline(DESIRED_DISTANCE, color="orange", linewidth=0.8, linestyle=":",
+               label=f"standoff @ min_z {DESIRED_DISTANCE:.2f} m")
 ax_err.set_xlim(0, tmax)
-ax_err.set_ylim(0, max(df["xy_distance"].max(), DESIRED_DISTANCE) + 0.5)
+ax_err.set_ylim(0, max(df["xy_distance"].max(), _standoff_arr.max()) + 0.5)
+desired_dist_line, = ax_err.plot([], [], color="orange", linewidth=1.2, linestyle="-",
+                                  label="standoff(z)")
 ax_err.grid(True)
 
 xy_dist_line, = ax_err.plot([], [], color="steelblue", linewidth=1.5, label="XY distance")
@@ -466,7 +486,7 @@ fov_loss_text = ax_occ.text(
 _anim_lines = (drone_path, drone_marker, target_marker, desired_circle,
                ref_marker,
                alt_drone_line,
-               xy_dist_line,
+               xy_dist_line, desired_dist_line,
                yaw_state_line, yaw_line,
                cam_pitch_state_line, drone_pitch_line, cam_pitch_err_line,
                wx_line, wy_line, wz_line,
@@ -499,9 +519,10 @@ def update(frame):
     if has_ref_pos:
         ref_marker.set_data([sub["ref_x"].iloc[-1]], [sub["ref_y"].iloc[-1]])
     theta = np.linspace(0, 2*np.pi, 120)
+    _sd = _standoff_arr[frame]
     desired_circle.set_data(
-        sub["target_x"].iloc[-1] + DESIRED_DISTANCE * np.cos(theta),
-        sub["target_y"].iloc[-1] + DESIRED_DISTANCE * np.sin(theta))
+        sub["target_x"].iloc[-1] + _sd * np.cos(theta),
+        sub["target_y"].iloc[-1] + _sd * np.sin(theta))
     yaw_arrow.set_offsets([[dx, dy]])
     yaw_arrow.set_UVC(ARROW_LEN * np.cos(yaw), ARROW_LEN * np.sin(yaw))
 
@@ -524,6 +545,7 @@ def update(frame):
 
     # (1,1) XY tracking distance
     xy_dist_line.set_data(t, sub["xy_distance"])
+    desired_dist_line.set_data(t, _standoff_arr[:frame + 1])
 
     # (2,0) Yaw
     yaw_state_line.set_data(t, sub["drone_yaw"])

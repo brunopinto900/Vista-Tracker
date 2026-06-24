@@ -18,7 +18,7 @@ controller:
   ki_pos:      1.314
   kp_vel:      3.374
   ki_vel:      2.287
-  desired_distance: 4.0    # 4 desired - 1.5 replan_goal_dist
+  desired_distance: 3.3    # approx; C++ computes exact from FOV bounding-box geometry
   attitude_kp: 11.839
   yaw_kp:      0.496
 
@@ -66,7 +66,6 @@ world:
     - {x: 54.0, y: -5.0, size: 2.5}
 
 planner:
-  standoff_dist:    4.0    # desired distance from target (m) — matches controller.desired_distance
   wp_reach_thresh:  0.8    # advance before fully decelerating to prevent stop-and-go
   replan_goal_dist: 2.0    # 0.8 replan more frequently so ref jumps stay small
   rrt:
